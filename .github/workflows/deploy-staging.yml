@@ -6,7 +6,7 @@ on:
     types:
       - completed
     branches:
-      - chore/scrum-70-ci
+      - staging
 
   workflow_dispatch:
 
