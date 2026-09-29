@@ -2,9 +2,11 @@
  * Script DEV: tạo nhanh user thử nghiệm để test đăng nhập trên localhost.
  * Chạy: node scripts/create-test-users.js
  * (Không cần commit file này lên GitHub.)
+ *
+ * SCRUM-72 T-09: dùng Argon2id thay vì bcrypt để hash mật khẩu cho user mới.
  */
 require('dotenv').config();
-const bcrypt = require('bcryptjs');
+const { hashPassword } = require('../src/utils/passwordHash');
 const knexLib = require('knex');
 const config = require('../knexfile');
 
@@ -22,7 +24,7 @@ const users = [
 
 (async () => {
   try {
-    const passwordHash = await bcrypt.hash(PASSWORD, 10);
+    const passwordHash = await hashPassword(PASSWORD);
 
     for (const u of users) {
       const role = await knex('roles').where({ name: u.role }).first();
@@ -37,6 +39,8 @@ const users = [
           full_name: u.full_name,
           role_id: role.id,
           is_active: u.is_active,
+          failed_login_attempts: 0,
+          locked_until: null,
         })
         .onConflict('email')
         .merge();

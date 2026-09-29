@@ -1,11 +1,19 @@
 /**
  * SCRUM-74 [S-02 (T-05)] - Log in by using email and password
+ * SCRUM-72 [S-02 (T-07)] - Account Lockout After Failed Login Attempts
+ * SCRUM-72 [S-02 (T-09)] - Password Hashing with Argon2id
  * Controller: xử lý logic đăng nhập
  */
 
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { verifyPassword, hashPassword } = require('../utils/passwordHash');
+const {
+  checkLockStatus,
+  registerFailedAttempt,
+  resetFailedAttempts,
+  formatRemaining,
+} = require('../utils/lockout');
 
 /**
  * POST /api/auth/login
@@ -25,16 +33,54 @@ const login = async (req, res) => {
       });
     }
 
-    // 2. So sánh password
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    if (!isPasswordValid) {
-      return res.status(401).json({
+    // 2. [T-07] Kiểm tra tài khoản có đang bị khóa không - TRƯỚC khi xác thực mật khẩu
+    const lockStatus = await checkLockStatus(user);
+    if (lockStatus.locked) {
+      const { minutes, seconds } = formatRemaining(lockStatus.remainingMs);
+      return res.status(423).json({
         success: false,
-        message: 'Email hoặc mật khẩu không đúng.',
+        message: `Tài khoản đang bị khóa do đăng nhập sai quá nhiều lần. Vui lòng thử lại sau ${minutes} phút ${seconds} giây.`,
+        lockedRemainingSeconds: Math.ceil(lockStatus.remainingMs / 1000),
       });
     }
 
-    // 3. Kiểm tra tài khoản đã kích hoạt chưa (S-03 sẽ xử lý kích hoạt)
+    // 3. [T-09] So sánh password - hỗ trợ cả Argon2id (mới) và bcrypt (cũ, migrate dần)
+    const { valid: isPasswordValid, needsRehash } = await verifyPassword(
+      password,
+      user.password_hash
+    );
+
+    if (!isPasswordValid) {
+      // [T-07] Ghi nhận lần sai; nếu đạt ngưỡng thì khóa TỪ LÚC NÀY, nhưng request
+      // hiện tại (chính là lần sai thứ 5) vẫn chỉ là "sai mật khẩu" như bình thường (401).
+      // Lần thử KẾ TIẾP (thứ 6) mới thực sự bị chặn bởi checkLockStatus ở trên -> 423.
+      const attemptResult = await registerFailedAttempt(user);
+
+      if (attemptResult.locked) {
+        return res.status(401).json({
+          success: false,
+          message:
+            'Email hoặc mật khẩu không đúng. Bạn đã sai quá số lần cho phép, tài khoản sẽ bị khóa trong 15 phút.',
+        });
+      }
+
+      return res.status(401).json({
+        success: false,
+        message: 'Email hoặc mật khẩu không đúng.',
+        remainingAttempts: attemptResult.remainingAttempts,
+      });
+    }
+
+    // 4. [T-07] Mật khẩu đúng -> reset bộ đếm sai về 0
+    await resetFailedAttempts(user.id);
+
+    // 5. [T-09] Nếu hash đang là bcrypt cũ -> nâng cấp lên Argon2id (lazy migration)
+    if (needsRehash) {
+      const newHash = await hashPassword(password);
+      await User.updateById(user.id, { password_hash: newHash });
+    }
+
+    // 6. Kiểm tra tài khoản đã kích hoạt chưa (S-03 sẽ xử lý kích hoạt)
     if (!user.is_active) {
       return res.status(403).json({
         success: false,
@@ -42,7 +88,7 @@ const login = async (req, res) => {
       });
     }
 
-    // 4. Tạo JWT
+    // 7. Tạo JWT
     const payload = {
       userId: user.id,
       email: user.email,
@@ -53,7 +99,7 @@ const login = async (req, res) => {
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
 
-    // 5. Trả về response
+    // 8. Trả về response
     return res.status(200).json({
       success: true,
       message: 'Đăng nhập thành công.',

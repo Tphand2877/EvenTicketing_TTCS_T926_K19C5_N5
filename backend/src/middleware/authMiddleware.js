@@ -14,6 +14,7 @@ const authenticate = (req, res, next) => {
   const authHeader = req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.denyReason = 'Thiếu token xác thực';
     return res.status(401).json({
       success: false,
       message: 'Không tìm thấy token xác thực. Vui lòng đăng nhập.',
@@ -28,11 +29,13 @@ const authenticate = (req, res, next) => {
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
+      req.denyReason = 'Token đã hết hạn';
       return res.status(401).json({
         success: false,
         message: 'Token đã hết hạn. Vui lòng đăng nhập lại.',
       });
     }
+    req.denyReason = 'Token không hợp lệ';
     return res.status(401).json({
       success: false,
       message: 'Token không hợp lệ.',

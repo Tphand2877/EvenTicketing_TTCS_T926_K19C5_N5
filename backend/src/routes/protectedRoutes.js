@@ -1,15 +1,13 @@
 /**
  * Demo các route được bảo vệ theo role
- * Dùng để test RBAC middleware (SCRUM-75)
+ * Dùng để test RBAC middleware (SCRUM-75) + deny-by-default (SCRUM-72 T-08)
  */
 
-const express = require('express');
-const router = express.Router();
-const { authenticate } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
+const { createSecureRouter } = require('../middleware/secureRoute');
+const router = createSecureRouter();
 
 // ✅ Mọi user đã đăng nhập đều xem được
-router.get('/dashboard', authenticate, (req, res) => {
+router.get('/dashboard', { authenticated: true }, (req, res) => {
   res.json({
     success: true,
     message: `Xin chào ${req.user.email}! Role của bạn: ${req.user.role}`,
@@ -17,17 +15,17 @@ router.get('/dashboard', authenticate, (req, res) => {
 });
 
 // ✅ Chỉ admin
-router.get('/admin/users', authenticate, authorize('admin'), (req, res) => {
+router.get('/admin/users', { roles: ['admin'] }, (req, res) => {
   res.json({ success: true, message: 'Danh sách người dùng (admin only)' });
 });
 
 // ✅ Admin hoặc organizer
-router.get('/organizer/events', authenticate, authorize('admin', 'organizer'), (req, res) => {
+router.get('/organizer/events', { roles: ['admin', 'organizer'] }, (req, res) => {
   res.json({ success: true, message: 'Quản lý sự kiện (admin + organizer)' });
 });
 
 // ✅ Tất cả roles nhưng phải đăng nhập
-router.get('/buyer/tickets', authenticate, authorize('admin', 'organizer', 'buyer'), (req, res) => {
+router.get('/buyer/tickets', { roles: ['admin', 'organizer', 'buyer'] }, (req, res) => {
   res.json({ success: true, message: 'Vé của tôi (tất cả roles)' });
 });
 

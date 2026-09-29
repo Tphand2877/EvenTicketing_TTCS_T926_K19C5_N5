@@ -16,6 +16,8 @@ const User = {
         'users.password_hash',
         'users.full_name',
         'users.is_active',
+        'users.failed_login_attempts',
+        'users.locked_until',
         'roles.name as role'
       )
       .first(),
