@@ -154,4 +154,14 @@ describe('POST /api/auth/login', () => {
     expect(rehashCall).toBeDefined();
     expect(rehashCall[1].password_hash.startsWith('$argon2')).toBe(true);
   });
+
+  test('❌ Gửi payload JSON sai cú pháp trả về HTTP 400 thay vì 500 (BUG-04)', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .set('Content-Type', 'application/json')
+      .send('{ "email": "invalid json');
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
 });

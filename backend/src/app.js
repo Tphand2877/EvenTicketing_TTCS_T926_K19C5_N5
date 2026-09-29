@@ -32,9 +32,15 @@ app.use((req, res) => {
 });
 
 // ─── Global error handler ─────────────────────────────────────────────────────
-app.use((err, req, res, next) => {
-  console.error('[GlobalError]', err);
-  res.status(500).json({ success: false, message: 'Lỗi máy chủ không xác định.' });
+app.use((err, _req, res, _next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) {
+    console.error('[GlobalError]', err);
+  }
+  res.status(status).json({
+    success: false,
+    message: status === 400 ? (err.message || 'Dữ liệu JSON không hợp lệ.') : 'Lỗi máy chủ không xác định.',
+  });
 });
 
 // ─── Start server ─────────────────────────────────────────────────────────────

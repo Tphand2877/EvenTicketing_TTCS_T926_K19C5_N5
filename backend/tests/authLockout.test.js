@@ -55,7 +55,6 @@ describe('Account lockout (T-07)', () => {
     // 5 lần sai liên tiếp -> TẤT CẢ đều là 401 (bản thân lần sai thứ 5 chưa bị khóa,
     // nó chỉ là nguyên nhân khiến tài khoản CHUYỂN sang trạng thái khóa cho lần SAU)
     for (let i = 1; i <= 5; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       const res = await request(app)
         .post('/api/auth/login')
         .send({ email: record.email, password: 'sai-mat-khau' });
