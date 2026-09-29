@@ -51,23 +51,13 @@ const login = async (req, res) => {
     );
 
     if (!isPasswordValid) {
-      // [T-07] Ghi nhận lần sai; nếu đạt ngưỡng thì khóa TỪ LÚC NÀY, nhưng request
-      // hiện tại (chính là lần sai thứ 5) vẫn chỉ là "sai mật khẩu" như bình thường (401).
-      // Lần thử KẾ TIẾP (thứ 6) mới thực sự bị chặn bởi checkLockStatus ở trên -> 423.
-      const attemptResult = await registerFailedAttempt(user);
-
-      if (attemptResult.locked) {
-        return res.status(401).json({
-          success: false,
-          message:
-            'Email hoặc mật khẩu không đúng. Bạn đã sai quá số lần cho phép, tài khoản sẽ bị khóa trong 15 phút.',
-        });
-      }
+      // [T-07] Ghi nhận lần sai; nếu đạt ngưỡng thì khóa TỪ LÚC NÀY.
+      // Response trả về 401 giống hệt trường hợp email không tồn tại để chống User Enumeration (BUG-02).
+      await registerFailedAttempt(user);
 
       return res.status(401).json({
         success: false,
         message: 'Email hoặc mật khẩu không đúng.',
-        remainingAttempts: attemptResult.remainingAttempts,
       });
     }
 

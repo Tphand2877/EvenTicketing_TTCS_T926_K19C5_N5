@@ -15,8 +15,8 @@ npm test
 ```
 
 **Kết quả đạt (PASS):**
-- 3 test suites passed, 3 total
-- 13 tests passed, 13 total
+- 8 test suites passed, 8 total
+- 32 tests passed, 32 total (bao gồm test bảo mật T-07..T-10 và test chống User Enumeration)
 - Không có log "Server đang chạy tại..." xen giữa kết quả test
 - Không có cảnh báo "A worker process has failed to exit gracefully"
 
@@ -91,13 +91,13 @@ Kết quả đạt: `success: true`, có `data.accessToken`, `data.user.role` = 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login -ContentType "application/json" -Body '{"email":"admin@test.com","password":"saimatkhau"}'
 ```
-Kết quả đạt: lỗi HTTP 401.
+Kết quả đạt: lỗi HTTP 401 (`{"success":false,"message":"Email hoặc mật khẩu không đúng."}`).
 
 **TC-03 - Email không tồn tại → 401**
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login -ContentType "application/json" -Body '{"email":"khongtontai@test.com","password":"123456"}'
 ```
-Kết quả đạt: lỗi HTTP 401. Thông báo lỗi phải **giống hệt** TC-02 (không được lộ email có tồn tại hay không).
+Kết quả đạt: lỗi HTTP 401. Response body phải **giống hệt** TC-02 (không có trường `remainingAttempts`, không được lộ email có tồn tại hay không - BUG-02).
 
 **TC-04 - Tài khoản chưa kích hoạt → 403**
 ```powershell
@@ -171,7 +171,7 @@ Làm tương tự cho các dòng còn lại trong bảng, đổi route và biế
 
 | Test case | Kết quả mong đợi | Thực tế | Đạt/Không đạt |
 |---|---|---|---|
-| npm test | 13/13 pass | | |
+| npm test | 32/32 pass (8 suites) | | |
 | TC-01 Login đúng | 200 + accessToken | | |
 | TC-02 Sai mật khẩu | 401 | | |
 | TC-03 Email không tồn tại | 401 | | |

@@ -87,6 +87,25 @@ describe('POST /api/auth/login', () => {
     expect(User.updateById).toHaveBeenCalledWith(1, { failed_login_attempts: 1 });
   });
 
+  test('🔒 Chống User Enumeration: sai mật khẩu và email không tồn tại trả response giống hệt nhau (BUG-02)', async () => {
+    // 1. Email không tồn tại
+    User.findByEmail.mockResolvedValue(null);
+    const resNotFound = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'noone@test.com', password: PASSWORD });
+
+    // 2. Email có thật nhưng sai mật khẩu
+    User.findByEmail.mockResolvedValue(baseUser({ email: 'user@test.com' }));
+    const resWrongPass = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'user@test.com', password: 'wrongpassword' });
+
+    expect(resNotFound.status).toBe(401);
+    expect(resWrongPass.status).toBe(401);
+    expect(resWrongPass.body).toEqual(resNotFound.body);
+    expect(resWrongPass.body).not.toHaveProperty('remainingAttempts');
+  });
+
   test('❌ Tài khoản chưa kích hoạt → 403', async () => {
     User.findByEmail.mockResolvedValue(
       baseUser({ email: 'inactive@test.com', is_active: false })
