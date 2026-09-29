@@ -1,0 +1,40 @@
+import axios from 'axios'
+
+const BASE_URL = import.meta.env.VITE_API_URL || '/api'
+
+const apiClient = axios.create({
+  baseURL: BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// ── Request interceptor: attach JWT ──────────────────────────────────────────
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('et_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error),
+)
+
+// ── Response interceptor: handle 401 ─────────────────────────────────────────
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('et_token')
+      localStorage.removeItem('et_user')
+      // Redirect to login preserving the current path
+      const returnTo = encodeURIComponent(window.location.pathname)
+      window.location.href = `/login?returnTo=${returnTo}`
+    }
+    return Promise.reject(error)
+  },
+)
+
+export default apiClient
