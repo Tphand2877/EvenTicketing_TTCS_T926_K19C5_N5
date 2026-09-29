@@ -196,16 +196,15 @@ $HadDevEnvironment = `
 
 if ($HadOldStaging) {
 
-    $oldBackendId = docker inspect `
-        --format "{{.Image}}" `
-        $StagingBackend
+    Write-Host "Saving current staging containers for rollback..."
 
-    $oldFrontendId = docker inspect `
-        --format "{{.Image}}" `
-        $StagingFrontend
+    Run-Docker commit `
+        $StagingBackend `
+        $RollbackBackendImage
 
-    Run-Docker tag $oldBackendId $RollbackBackendImage
-    Run-Docker tag $oldFrontendId $RollbackFrontendImage
+    Run-Docker commit `
+        $StagingFrontend `
+        $RollbackFrontendImage
 
     Write-Host "Previous staging images saved."
 }
