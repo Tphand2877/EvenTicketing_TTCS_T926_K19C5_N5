@@ -1,146 +1,61 @@
-name: CI
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
 
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+    needs:
+      - backend-build
+      - backend-lint
+      - backend-test
+      - frontend-build
+      - frontend-lint
 
-jobs:
-  backend-build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Build backend
-        working-directory: backend
-        run: npm run build
-
-
-  backend-lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
+      - name: Check Docker
+        shell: powershell
+        run: docker info
 
-      - name: Install dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Lint backend
-        working-directory: backend
-        run: npm run lint
-
-
-  backend-test:
-    runs-on: ubuntu-latest
-
-    env:
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_NAME: eventticketing
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-
-    services:
-      postgres:
-        image: postgres:16
-
+      - name: Create staging environment
+        shell: powershell
         env:
-          POSTGRES_DB: eventticketing
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+        run: |
+          "POSTGRES_DB=$env:POSTGRES_DB" | Out-File .env -Encoding utf8
+          "POSTGRES_USER=$env:POSTGRES_USER" | Out-File .env -Encoding utf8 -Append
+          "POSTGRES_PASSWORD=$env:POSTGRES_PASSWORD" | Out-File .env -Encoding utf8 -Append
 
-        ports:
-          - 5432:5432
+      - name: Build backend staging image
+        shell: powershell
+        run: docker build -t eventticketing-backend:staging ./backend
 
-        options: >-
-          --health-cmd="pg_isready -U postgres -d eventticketing"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+      - name: Build frontend staging image
+        shell: powershell
+        run: |
+          docker build `
+            --build-arg VITE_API_URL=http://localhost:3000 `
+            -t eventticketing-frontend:staging `
+            ./frontend
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Deploy local staging
+        shell: powershell
+        run: |
+          powershell `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File .\scripts\deploy-staging.ps1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Run backend tests
-        working-directory: backend
-        run: npm test
-
-
-  frontend-build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-
-  frontend-lint:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Lint frontend
-        working-directory: frontend
-        run: npm run lint
+      - name: Verify staging
+        shell: powershell
+        run: |
+          docker compose `
+            -p eventticketing-staging `
+            -f docker-compose.staging.yml `
+            ps
