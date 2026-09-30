@@ -160,3 +160,81 @@ jobs:
       - name: Lint frontend
         working-directory: frontend
         run: npm run lint
+
+  staging-smoke:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB: eventticketing_ci
+      POSTGRES_USER: eventticketing_ci
+      POSTGRES_PASSWORD: ci_only_password
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check deployment script syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/deploy-staging.ps1'),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+
+      - name: Build staging images
+        run: docker compose -f docker-compose.staging.yml build backend frontend
+
+      - name: Start database
+        run: docker compose -f docker-compose.staging.yml up -d --wait postgres
+
+      - name: Apply migrations
+        run: docker compose -f docker-compose.staging.yml run --rm --no-deps backend npm run migrate
+
+      - name: Start app
+        run: docker compose -f docker-compose.staging.yml up -d --wait backend frontend
+
+      - name: Check website and login API through Nginx
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8080/ > /dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3000/health > /dev/null
+          status=$(curl --silent --show-error --output /tmp/staging-login.json --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"missing@example.com","password":"invalid"}' \
+            http://127.0.0.1:8080/api/auth/login)
+          test "$status" = 401
+          grep -q '"success":false' /tmp/staging-login.json
+
+      - name: Remove temporary staging containers
+        if: always()
+        run: docker compose -f docker-compose.staging.yml down -v
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs:
+      - backend-build
+      - backend-lint
+      - backend-test
+      - frontend-build
+      - frontend-lint
+      - staging-smoke
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    env:
+      POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy and verify staging
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-staging.ps1
