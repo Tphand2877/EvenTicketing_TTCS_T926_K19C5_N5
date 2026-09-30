@@ -118,8 +118,23 @@ jobs:
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip or mock frontend build
-        run: echo "frontend-build completed successfully"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
 
 
   # =========================
@@ -128,5 +143,20 @@ jobs:
   frontend-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip or mock frontend lint
-        run: echo "frontend-lint completed successfully"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint

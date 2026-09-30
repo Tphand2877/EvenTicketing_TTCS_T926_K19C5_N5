@@ -1,10 +1,8 @@
-import { useParams, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 
 export default function EventDetailPage() {
-  const { id } = useParams()
-
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
