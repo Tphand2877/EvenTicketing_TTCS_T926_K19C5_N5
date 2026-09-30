@@ -29,6 +29,27 @@ gọi `scripts/deploy-staging.ps1`. Script kiểm tra Docker,
 build hai image, khởi động database, chạy migrations, cập nhật backend/frontend,
 rồi kiểm tra hai container và hai địa chỉ HTTP.
 
+## Đưa thay đổi từ nhánh cá nhân lên staging
+
+1. BE-2 mở pull request cho T-02 và T-03 để nhóm xem phần CI và triển khai.
+   Nhánh T-03 được tạo sau T-02, nên gộp T-02 trước để mỗi PR còn đúng phần
+   việc của nó. Người có quyền duyệt mới gộp sau khi các bước kiểm tra đạt.
+2. Đồng bộ code đã được duyệt sang nhánh `staging` bằng pull request. Kiểm tra
+   nhánh `staging` có cả workflow mới, Compose mới và các commit ứng dụng cần
+   chạy. Nếu có thay đổi staging của thành viên khác, giải quyết xung đột cùng
+   người sửa phần đó trước khi gộp; không ghi đè file của họ.
+3. Khi pull request vào `staging` được gộp, GitHub tạo một lần chạy CI do push
+   vào `staging`. Năm job code và `staging-smoke` phải xanh trước; sau đó
+   `deploy-staging` mới chạy trên máy Windows của nhóm. PR chỉ chạy kiểm tra,
+   bản thân PR chưa triển khai.
+4. BE-2 mở lần chạy đó, xác nhận `deploy-staging` xanh, rồi mở địa chỉ staging
+   từ máy khác và thử một thao tác thật (ví dụ đăng nhập bằng tài khoản thử).
+   Ghi lại commit, địa chỉ và kết quả để BE-1/FE cùng kiểm tra.
+
+Compose dùng cùng tên project `eventticketing-staging` và volume PostgreSQL
+`staging_postgres_data` với bản staging cũ, nên việc cập nhật ứng dụng giữ lại
+dữ liệu đang có. Không dùng `docker compose down -v` trên máy staging.
+
 ## Chạy thủ công tại máy có Docker
 
 Sao chép `.env.example` thành `.env` ở thư mục gốc và thay mật khẩu mẫu. File
