@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import RegisterForm from '../components/auth/RegisterForm'
 import VerifyEmailNotice from '../components/auth/VerifyEmailNotice'
 import apiClient from '../services/apiClient'
 
 export default function RegisterPage() {
+  const navigate  = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [verified, setVerified] = useState(null) // email after success

@@ -3,7 +3,7 @@ import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 
 export default function EventDetailPage() {
-  const { id: _id } = useParams()
+  const { id } = useParams()
 
   return (
     <div className="min-h-screen flex flex-col">
