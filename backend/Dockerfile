@@ -8,6 +8,8 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
+COPY knexfile.js ./
+COPY seeds ./seeds
 COPY src ./src
 
 EXPOSE 3000

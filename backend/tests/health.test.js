@@ -6,8 +6,7 @@ describe("GET /health", () => {
     const response = await request(app).get("/health");
 
     expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual({
-      status: "ok"
-    });
+    expect(response.body.status).toBe("ok");
+    expect(response.body).toHaveProperty("timestamp");
   });
 });
