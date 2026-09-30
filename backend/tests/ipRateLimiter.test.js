@@ -22,7 +22,6 @@ describe('IP rate limiter cho /login (T-09)', () => {
 
     let lastRes;
     for (let i = 0; i < IP_RATE_LIMIT.MAX_ATTEMPTS; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       lastRes = await agent.post('/login');
       expect(lastRes.status).toBe(200);
     }

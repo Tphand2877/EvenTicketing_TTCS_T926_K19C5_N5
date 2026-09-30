@@ -20,8 +20,23 @@ jobs:
   backend-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip or mock build if not defined
-        run: echo "backend-build completed successfully"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
 
 
   # =========================
@@ -30,8 +45,23 @@ jobs:
   backend-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip or mock lint if not defined
-        run: echo "backend-lint completed successfully"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Lint backend
+        working-directory: backend
+        run: npm run lint
 
 
   # =========================
