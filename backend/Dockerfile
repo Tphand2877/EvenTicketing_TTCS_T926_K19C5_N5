@@ -11,6 +11,8 @@ RUN npm ci --omit=dev
 COPY knexfile.js ./
 COPY seeds ./seeds
 COPY src ./src
+# Script tạo tài khoản demo (admin / organizer / buyer)
+COPY scripts ./scripts
 
 EXPOSE 3000
 
