@@ -9,6 +9,8 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
+import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
+import AdminDashboardPage from './pages/AdminDashboardPage'
 
 export default function App() {
   return (
@@ -34,13 +36,13 @@ export default function App() {
 
           {/* ── Organizer-only routes ────────────────────────── */}
           <Route element={<PrivateRoute roles={['organizer', 'admin']} />}>
-            {/* Placeholder – will be implemented in later sprints */}
-            <Route path="/organizer" element={<div className="p-10 text-center text-gray-500">Organizer Dashboard – Coming Soon</div>} />
+            {/* SCRUM-80: quản lý sự kiện & suất diễn */}
+            <Route path="/organizer" element={<OrganizerDashboardPage />} />
           </Route>
 
           {/* ── Admin-only routes ─────────────────────────────── */}
           <Route element={<PrivateRoute roles={['admin']} />}>
-            <Route path="/admin" element={<div className="p-10 text-center text-gray-500">Admin Panel – Coming Soon</div>} />
+            <Route path="/admin" element={<AdminDashboardPage />} />
           </Route>
 
           {/* ── 404 fallback ─────────────────────────────────── */}
