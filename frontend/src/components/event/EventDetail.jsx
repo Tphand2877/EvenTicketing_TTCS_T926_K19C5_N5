@@ -3,10 +3,15 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { getAvailability, holdSeats, releaseHold } from '../../services/eventService'
 import SeatHoldTimer from '../seatmap/SeatHoldTimer'
+import SeatLegend from '../seatmap/SeatLegend'
+import SeatMapCanvas from '../seatmap/SeatMapCanvas'
+import { seatName } from '../seatmap/seatUtils'
 import ShowtimeList from './ShowtimeList'
 import { formatDateTime, formatPrice, getCategoryStyle, getErrorMessage } from './eventFormat'
 
 const MAX_TICKETS = 10
+// Suất diễn lớn hơn ngưỡng này dùng dropdown số lượng thay vì vẽ sơ đồ ghế
+const SEAT_MAP_MAX_CAPACITY = 300
 
 /**
  * Chi tiết sự kiện + khung đặt vé (SCRUM-80) với giữ chỗ có thời hạn (SCRUM-84)
@@ -19,6 +24,7 @@ export default function EventDetail({ event, showtimes }) {
 
   const [selectedId, setSelectedId]     = useState(null)
   const [quantity, setQuantity]         = useState(1)
+  const [seats, setSeats]               = useState([])
   const [availability, setAvailability] = useState(null)
   const [hold, setHold]                 = useState(null)
   const [busy, setBusy]                 = useState(false)
@@ -40,6 +46,7 @@ export default function EventDetail({ event, showtimes }) {
 
   const handleSelect = (id) => {
     setSelectedId(id)
+    setSeats([])
     setMessage(null)
   }
 
@@ -51,7 +58,9 @@ export default function EventDetail({ event, showtimes }) {
     setBusy(true)
     setMessage(null)
     try {
-      setHold(await holdSeats(selectedId, quantity))
+      const newHold = await holdSeats(selectedId, ticketCount)
+      setHold({ ...newHold, seats: useSeatMap ? seats.map(seatName) : [] })
+      setSeats([])
     } catch (err) {
       setMessage({ type: 'error', text: getErrorMessage(err, 'Không thể giữ chỗ, vui lòng thử lại.') })
     } finally {
@@ -81,6 +90,8 @@ export default function EventDetail({ event, showtimes }) {
 
   const maxQuantity = Math.max(Math.min(MAX_TICKETS, availability?.available ?? MAX_TICKETS), 1)
   const soldOut = availability?.available === 0
+  const useSeatMap = !!availability && availability.capacity <= SEAT_MAP_MAX_CAPACITY
+  const ticketCount = useSeatMap ? seats.length : Math.min(quantity, maxQuantity)
 
   return (
     <>
@@ -128,6 +139,24 @@ export default function EventDetail({ event, showtimes }) {
                 <p className="text-gray-600 leading-relaxed whitespace-pre-line">{event.description}</p>
               </div>
             )}
+
+            {selectedShowtime && !hold && useSeatMap && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
+                  <span className="text-xs text-gray-500">Tối đa {maxQuantity} ghế mỗi lượt</span>
+                </div>
+                <SeatMapCanvas
+                  capacity={availability.capacity}
+                  takenCount={availability.capacity - availability.available}
+                  selected={seats}
+                  maxSelect={maxQuantity}
+                  onChange={setSeats}
+                  disabled={busy || soldOut}
+                />
+                <SeatLegend />
+              </div>
+            )}
           </div>
 
           {/* Booking card */}
@@ -149,6 +178,13 @@ export default function EventDetail({ event, showtimes }) {
                       Còn <strong>{availability.available}</strong> / {availability.capacity} chỗ
                     </p>
                   )}
+                  {useSeatMap ? (
+                    <p className="text-sm text-gray-700">
+                      {seats.length > 0
+                        ? <>Ghế đã chọn: <strong>{seats.map(seatName).join(', ')}</strong></>
+                        : 'Hãy chọn ghế trên sơ đồ chỗ ngồi.'}
+                    </p>
+                  ) : (
                   <div className="flex items-center justify-between">
                     <label htmlFor="quantity" className="text-sm font-medium text-gray-700">Số vé</label>
                     <select
@@ -163,18 +199,19 @@ export default function EventDetail({ event, showtimes }) {
                       ))}
                     </select>
                   </div>
+                  )}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Tạm tính</span>
                     <span className="font-bold text-gray-900">
-                      {formatPrice(selectedShowtime.price * Math.min(quantity, maxQuantity))}
+                      {formatPrice(selectedShowtime.price * ticketCount)}
                     </span>
                   </div>
                   <button
                     onClick={handleHold}
-                    disabled={busy || soldOut}
+                    disabled={busy || soldOut || ticketCount === 0}
                     className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {soldOut ? 'Hết chỗ' : busy ? 'Đang giữ chỗ…' : 'Giữ chỗ'}
+                    {soldOut ? 'Hết chỗ' : busy ? 'Đang giữ chỗ…' : ticketCount ? `Giữ ${ticketCount} chỗ` : 'Giữ chỗ'}
                   </button>
                 </div>
               )}
@@ -183,9 +220,10 @@ export default function EventDetail({ event, showtimes }) {
                 <div className="space-y-3">
                   <p className="text-sm text-gray-700">
                     Đang giữ <strong>{hold.quantity}</strong> vé cho suất {formatDateTime(selectedShowtime?.starts_at)}.
+                    {hold.seats.length > 0 && <> Ghế: <strong>{hold.seats.join(', ')}</strong>.</>}
                   </p>
                   <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={handleExpire} />
-                  <Link to="/checkout" state={{ hold }} className="btn-primary block text-center">
+                  <Link to="/checkout" state={{ hold, event, showtime: selectedShowtime }} className="btn-primary block text-center">
                     Tiếp tục thanh toán
                   </Link>
                   <button

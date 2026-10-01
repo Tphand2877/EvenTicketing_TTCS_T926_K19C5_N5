@@ -10,6 +10,7 @@ import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
+import AdminDashboardPage from './pages/AdminDashboardPage'
 
 export default function App() {
   return (
@@ -41,7 +42,7 @@ export default function App() {
 
           {/* ── Admin-only routes ─────────────────────────────── */}
           <Route element={<PrivateRoute roles={['admin']} />}>
-            <Route path="/admin" element={<div className="p-10 text-center text-gray-500">Admin Panel – Coming Soon</div>} />
+            <Route path="/admin" element={<AdminDashboardPage />} />
           </Route>
 
           {/* ── 404 fallback ─────────────────────────────────── */}

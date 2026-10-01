@@ -1,4 +1,5 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 const roleLabels = {
@@ -7,16 +8,29 @@ const roleLabels = {
   buyer: { label: 'Buyer', color: 'bg-blue-100 text-blue-700' },
 }
 
+const getNavLinks = (role) => [
+  { to: '/events', label: 'Sự kiện' },
+  ...(role === 'organizer' || role === 'admin' ? [{ to: '/organizer', label: 'Quản lý' }] : []),
+  ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }] : []),
+]
+
+const navClass = ({ isActive }) =>
+  `text-sm font-medium transition-colors ${isActive ? 'text-pink-600' : 'text-gray-600 hover:text-pink-600'}`
+
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const handleLogout = () => {
+    setMenuOpen(false)
     logout()
     navigate('/login')
   }
 
   const roleInfo = user?.role ? roleLabels[user.role] : null
+  const displayName = user?.fullName || user?.name || user?.email
+  const links = getNavLinks(user?.role)
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm">
@@ -32,54 +46,33 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Nav links */}
+          {/* Nav links (desktop) */}
           <nav className="hidden md:flex items-center gap-6">
-            <Link
-              to="/events"
-              className="text-sm font-medium text-gray-600 hover:text-pink-600 transition-colors"
-            >
-              Sự kiện
-            </Link>
-            {user?.role === 'organizer' && (
-              <Link
-                to="/organizer"
-                className="text-sm font-medium text-gray-600 hover:text-pink-600 transition-colors"
-              >
-                Quản lý
-              </Link>
-            )}
-            {user?.role === 'admin' && (
-              <Link
-                to="/admin"
-                className="text-sm font-medium text-gray-600 hover:text-pink-600 transition-colors"
-              >
-                Admin
-              </Link>
-            )}
+            {links.map((l) => (
+              <NavLink key={l.to} to={l.to} className={navClass}>{l.label}</NavLink>
+            ))}
           </nav>
 
           {/* Auth area */}
           <div className="flex items-center gap-3">
             {isAuthenticated && user ? (
               <>
-                {/* Role badge */}
                 {roleInfo && (
                   <span className={`hidden sm:inline-flex text-xs font-medium px-2.5 py-1 rounded-full ${roleInfo.color}`}>
                     {roleInfo.label}
                   </span>
                 )}
-                {/* User avatar */}
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-white text-sm font-semibold shadow">
-                    {(user.name || user.email || 'U')[0].toUpperCase()}
+                    {(displayName || 'U')[0].toUpperCase()}
                   </div>
-                  <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-[120px] truncate">
-                    {user.name || user.email}
+                  <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-[140px] truncate">
+                    {displayName}
                   </span>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="text-sm font-medium text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"
+                  className="hidden md:block text-sm font-medium text-gray-500 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"
                 >
                   Đăng xuất
                 </button>
@@ -100,9 +93,48 @@ export default function Header() {
                 </Link>
               </>
             )}
+
+            {/* Mobile menu toggle */}
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
+              aria-label="Mở menu"
+              aria-expanded={menuOpen}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d={menuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Mobile menu */}
+      {menuOpen && (
+        <nav className="md:hidden border-t border-gray-100 bg-white px-4 py-3 space-y-1">
+          {links.map((l) => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              onClick={() => setMenuOpen(false)}
+              className={({ isActive }) =>
+                `block px-3 py-2 rounded-lg text-sm font-medium ${isActive ? 'bg-pink-50 text-pink-600' : 'text-gray-700 hover:bg-gray-50'}`
+              }
+            >
+              {l.label}
+            </NavLink>
+          ))}
+          {isAuthenticated && user && (
+            <button
+              onClick={handleLogout}
+              className="block w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              Đăng xuất
+            </button>
+          )}
+        </nav>
+      )}
     </header>
   )
 }
