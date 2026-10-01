@@ -28,8 +28,9 @@ apiClient.interceptors.response.use(
   (error) => {
     // Chỉ coi là "hết phiên" khi request có gửi token. Đăng nhập sai mật khẩu cũng trả 401
     // nhưng không có token -> để LoginPage tự hiển thị lỗi, không reload trang.
+    // skipAuthRedirect: request tự xử lý 401 (VD AuthContext kiểm tra token lúc mở web).
     const sentToken = !!error.config?.headers?.Authorization
-    if (error.response?.status === 401 && sentToken) {
+    if (error.response?.status === 401 && sentToken && !error.config?.skipAuthRedirect) {
       localStorage.removeItem('et_token')
       localStorage.removeItem('et_user')
       // Redirect to login preserving the current path (không redirect nếu đang ở trang login)
