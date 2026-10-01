@@ -167,6 +167,7 @@ jobs:
       POSTGRES_DB: eventticketing_ci
       POSTGRES_USER: eventticketing_ci
       POSTGRES_PASSWORD: ci_only_password
+      FRONTEND_URL: http://localhost:8080
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -231,6 +232,7 @@ jobs:
       POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
       POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
       POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+      FRONTEND_URL: ${{ vars.STAGING_FRONTEND_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

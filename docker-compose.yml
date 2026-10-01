@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventticketing-postgres
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: eventticketing-backend
+
+    environment:
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      FRONTEND_URL: http://localhost:8080
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+      args:
+        VITE_API_URL: http://localhost:3000
+
+    container_name: eventticketing-frontend
+
+    ports:
+      - "8080:80"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+volumes:
+  postgres_data:

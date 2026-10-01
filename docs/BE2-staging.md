@@ -2,10 +2,11 @@
 
 ## Trạng thái và mục đích
 
-Staging là bản chạy thử của cả ba phần: PostgreSQL, backend và frontend. Nhánh
-`staging` là nơi GitHub Actions triển khai bản này trên máy Windows tự quản lý
-của nhóm. `main` và các nhánh tính năng chỉ chạy kiểm tra CI; chúng không tự
-triển khai.
+Staging là bản chạy thử của cả ba phần: PostgreSQL, backend và frontend. Workflow
+chỉ triển khai khi có push vào nhánh `staging` trên máy Windows tự quản lý của
+nhóm. `main` và các nhánh tính năng chỉ chạy kiểm tra CI; chúng không tự
+triển khai. Sau khi PR #5 được gộp, nhánh `staging` đã bị xóa trên GitHub; nhóm
+cần tạo lại nhánh này từ `main` trước lần triển khai tiếp theo.
 
 Trên máy chạy staging, frontend mở ở `http://<địa-chỉ-máy>:8080`. Trình duyệt
 gọi API qua cùng địa chỉ, ví dụ `/api/auth/login`; Nginx chuyển yêu cầu tới
@@ -20,7 +21,11 @@ kiểm tra tường lửa và mạng của máy nếu thành viên khác không 
 3. Tạo ba GitHub Actions secrets cho repository:
    `STAGING_POSTGRES_DB`, `STAGING_POSTGRES_USER`,
    `STAGING_POSTGRES_PASSWORD`. Mật khẩu thật không được commit vào Git.
-4. Bảo đảm cổng 8080 còn trống. Cổng 3000 chỉ được dùng trên máy staging.
+4. Tạo repository variable `STAGING_FRONTEND_URL` bằng địa chỉ trình duyệt
+   của thành viên khác mở được, ví dụ `http://<địa-chỉ-máy>:8080`. Backend dùng
+   địa chỉ này trong email kích hoạt tài khoản; `localhost` chỉ đúng khi mở
+   email ngay trên máy staging.
+5. Bảo đảm cổng 8080 còn trống. Cổng 3000 chỉ được dùng trên máy staging.
 
 Workflow chỉ chạy job `deploy-staging` sau khi năm job kiểm tra code và job
 `staging-smoke` đạt, đồng thời có push vào nhánh `staging`. Job smoke dựng
@@ -34,7 +39,9 @@ rồi kiểm tra hai container và hai địa chỉ HTTP.
 1. BE-2 mở pull request cho T-02 và T-03 để nhóm xem phần CI và triển khai.
    Nhánh T-03 được tạo sau T-02, nên gộp T-02 trước để mỗi PR còn đúng phần
    việc của nó. Người có quyền duyệt mới gộp sau khi các bước kiểm tra đạt.
-2. Đồng bộ code đã được duyệt sang nhánh `staging` bằng pull request. Kiểm tra
+2. Nếu nhánh `staging` chưa tồn tại, người quản lý repository tạo lại từ
+   `main`. Đồng bộ code đã được duyệt sang nhánh `staging` bằng pull request.
+   Kiểm tra
    nhánh `staging` có cả workflow mới, Compose mới và các commit ứng dụng cần
    chạy. Nếu có thay đổi staging của thành viên khác, giải quyết xung đột cùng
    người sửa phần đó trước khi gộp; không ghi đè file của họ.
@@ -52,7 +59,8 @@ dữ liệu đang có. Không dùng `docker compose down -v` trên máy staging.
 
 ## Chạy thủ công tại máy có Docker
 
-Sao chép `.env.example` thành `.env` ở thư mục gốc và thay mật khẩu mẫu. File
+Sao chép `.env.example` thành `.env` ở thư mục gốc, thay mật khẩu mẫu và đặt
+`FRONTEND_URL` bằng địa chỉ mở được từ máy khác. File
 `.env` đã được Git bỏ qua. Trong PowerShell, đứng tại thư mục gốc và chạy:
 
 ```powershell
