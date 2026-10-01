@@ -3,11 +3,12 @@ import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './routes/PrivateRoute'
 
 // Pages
-import LoginPage      from './pages/LoginPage'
-import RegisterPage   from './pages/RegisterPage'
-import EventListPage  from './pages/EventListPage'
+import LoginPage       from './pages/LoginPage'
+import RegisterPage    from './pages/RegisterPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
+import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
-import CheckoutPage   from './pages/CheckoutPage'
+import CheckoutPage    from './pages/CheckoutPage'
 
 export default function App() {
   return (
@@ -15,8 +16,9 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* ── Public routes ────────────────────────────────── */}
-          <Route path="/login"    element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/login"        element={<LoginPage />} />
+          <Route path="/register"     element={<RegisterPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
 
           {/* ── Root redirect ────────────────────────────────── */}
           <Route path="/" element={<Navigate to="/events" replace />} />

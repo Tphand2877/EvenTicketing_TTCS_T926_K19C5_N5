@@ -28,11 +28,45 @@ export const removeUser = () => localStorage.removeItem(USER_KEY)
  */
 export const login = async (email, password, remember = false) => {
   const { data } = await apiClient.post('/auth/login', { email, password })
-  // Expected: { token, user: { id, email, name, role } }
-  saveToken(data.token)
-  if (remember) {
-    saveUser(data.user)
+  const token = data?.data?.accessToken || data?.token
+  const user = data?.data?.user || data?.user
+  if (token) saveToken(token)
+  if (remember && user) {
+    saveUser(user)
   }
+  return data
+}
+
+/**
+ * Register buyer account (SCRUM-76)
+ * @param {{ name?: string, email: string, password: string }} userData
+ */
+export const register = async ({ name, email, password }) => {
+  const { data } = await apiClient.post('/auth/register', {
+    name,
+    email,
+    password,
+  })
+  return data
+}
+
+/**
+ * Verify account using token from email (SCRUM-76 AC4)
+ * @param {string} token
+ */
+export const verifyEmail = async (token) => {
+  const { data } = await apiClient.get('/auth/verify-email', {
+    params: { token },
+  })
+  return data
+}
+
+/**
+ * Resend activation email (SCRUM-76 AC4, NFR rate limit)
+ * @param {string} email
+ */
+export const resendVerification = async (email) => {
+  const { data } = await apiClient.post('/auth/resend-verification', { email })
   return data
 }
 
@@ -41,10 +75,6 @@ export const login = async (email, password, remember = false) => {
  * @param {'google'|'facebook'|'github'} provider
  */
 export const loginWithProvider = async (provider) => {
-  // In a real app, redirect to backend OAuth URL:
-  // window.location.href = `/api/auth/${provider}`
-  //
-  // For demo, return a mock user after a short delay
   await new Promise((r) => setTimeout(r, 800))
   const mockUser = {
     id: 'demo-001',
