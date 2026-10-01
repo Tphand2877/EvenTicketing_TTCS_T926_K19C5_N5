@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply font-sans text-gray-900 antialiased;
+    background-color: #f8fafc;
+  }
+}
+
+@layer components {
+  .input-field {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-xl text-sm
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           transition-all duration-200 bg-white placeholder-gray-400;
+  }
+
+  .input-field-error {
+    @apply border-red-400 focus:ring-red-400;
+  }
+
+  .btn-primary {
+    @apply w-full py-3 px-6 rounded-xl font-semibold text-white text-sm
+           bg-gradient-to-r from-violet-600 via-primary-600 to-orange-500
+           hover:from-violet-700 hover:via-primary-700 hover:to-orange-600
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           transition-all duration-200 transform hover:scale-[1.01]
+           disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none
+           shadow-lg shadow-primary-200;
+  }
+
+  .btn-social {
+    @apply w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl
+           border border-gray-200 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700
+           transition-all duration-200 hover:border-gray-300 hover:shadow-sm;
+  }
+
+  .card-auth {
+    @apply bg-white rounded-2xl shadow-xl p-8;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-violet-600 via-primary-600 to-orange-500 bg-clip-text text-transparent;
+  }
+
+  .bg-auth-pattern {
+    background-image:
+      radial-gradient(circle at 20% 50%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(219, 39, 119, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 60% 80%, rgba(234, 88, 12, 0.1) 0%, transparent 50%);
+  }
+}

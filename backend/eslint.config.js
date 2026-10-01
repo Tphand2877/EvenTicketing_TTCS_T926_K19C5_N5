@@ -5,7 +5,7 @@ module.exports = [
   js.configs.recommended,
 
   {
-    files: ["src/**/*.js", "tests/**/*.js"],
+    files: ["src/**/*.js", "tests/**/*.js", "seeds/**/*.js", "scripts/**/*.js"],
 
     languageOptions: {
       ecmaVersion: "latest",
@@ -17,7 +17,7 @@ module.exports = [
       },
     },
     rules: {
-  "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-},
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
   },
 ];
