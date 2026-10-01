@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { resendVerification } from '../../services/authService'
 
 /**
  * Shown after successful registration — prompts user to verify their email.
@@ -7,6 +9,31 @@ import { Link } from 'react-router-dom'
  *   email : string
  */
 export default function VerifyEmailNotice({ email }) {
+  const [resending, setResending] = useState(false)
+  const [resendStatus, setResendStatus] = useState(null) // { success: boolean, message: string }
+
+  const handleResend = async () => {
+    if (!email || resending) return
+    setResending(true)
+    setResendStatus(null)
+
+    try {
+      const res = await resendVerification(email)
+      setResendStatus({
+        success: true,
+        message: res.message || 'Liên kết kích hoạt mới đã được gửi vào email của bạn.',
+      })
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Không thể gửi lại email. Vui lòng thử lại sau.'
+      setResendStatus({
+        success: false,
+        message: msg,
+      })
+    } finally {
+      setResending(false)
+    }
+  }
+
   return (
     <div className="text-center space-y-5 py-4 animate-slide-up">
       {/* Icon */}
@@ -31,9 +58,9 @@ export default function VerifyEmailNotice({ email }) {
       {/* Steps */}
       <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3">
         {[
-          'Mở email vừa nhận',
-          'Nhấn vào nút "Xác nhận tài khoản"',
-          'Đăng nhập và bắt đầu mua vé!',
+          'Mở hộp thư email vừa đăng ký',
+          'Nhấn vào nút "Xác nhận tài khoản" (có hiệu lực trong 24 giờ)',
+          'Đăng nhập và bắt đầu trải nghiệm EvenTicketing!',
         ].map((step, i) => (
           <div key={i} className="flex items-center gap-3">
             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center shrink-0">
@@ -44,11 +71,22 @@ export default function VerifyEmailNotice({ email }) {
         ))}
       </div>
 
+      {/* Resend Status Feedback */}
+      {resendStatus && (
+        <div className={`text-sm p-3 rounded-xl ${resendStatus.success ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {resendStatus.message}
+        </div>
+      )}
+
       {/* Resend */}
       <p className="text-sm text-gray-500">
         Không thấy email?{' '}
-        <button className="text-pink-600 hover:text-pink-700 font-medium hover:underline">
-          Gửi lại
+        <button
+          onClick={handleResend}
+          disabled={resending}
+          className="text-pink-600 hover:text-pink-700 font-medium hover:underline disabled:opacity-50"
+        >
+          {resending ? 'Đang gửi lại…' : 'Gửi lại liên kết'}
         </button>
       </p>
 

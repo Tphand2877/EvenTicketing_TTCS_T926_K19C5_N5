@@ -1,9 +1,43 @@
 const { createSecureRouter } = require('../middleware/secureRoute');
 const router = createSecureRouter();
 
-const { login, getProfile } = require('../controllers/authController');
-const { validateLogin } = require('../middleware/validateMiddleware');
+const {
+  login,
+  getProfile,
+  register,
+  verifyEmail,
+  resendVerification,
+} = require('../controllers/authController');
+const {
+  validateLogin,
+  validateRegister,
+  validateResendVerification,
+} = require('../middleware/validateMiddleware');
 const { loginIpRateLimiter } = require('../middleware/ipRateLimiter');
+
+/**
+ * POST /api/auth/register
+ * SCRUM-76 [S-03] - Đăng ký tài khoản người mua
+ */
+router.post('/register', { public: true }, validateRegister, register);
+
+/**
+ * GET/POST /api/auth/verify-email
+ * SCRUM-76 [S-03] - Kích hoạt tài khoản qua link email
+ */
+router.get('/verify-email', { public: true }, verifyEmail);
+router.post('/verify-email', { public: true }, verifyEmail);
+
+/**
+ * POST /api/auth/resend-verification
+ * SCRUM-76 [S-03] - Gửi lại email kích hoạt
+ */
+router.post(
+  '/resend-verification',
+  { public: true },
+  validateResendVerification,
+  resendVerification
+);
 
 /**
  * POST /api/auth/login
