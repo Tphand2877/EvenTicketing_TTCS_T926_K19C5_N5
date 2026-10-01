@@ -15,32 +15,37 @@ export function AuthProvider({ children }) {
   const [token, setToken]   = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Restore session from localStorage on first mount
+  // Restore session from localStorage on first mount, rồi hỏi lại server xem token còn hợp lệ không.
+  // Nếu không (token giả, hết hạn, đổi JWT_SECRET...) thì đăng xuất âm thầm, để người dùng
+  // không bị "tưởng đã đăng nhập" rồi bị đá ra trang login giữa chừng (VD lúc giữ chỗ).
   useEffect(() => {
     const storedToken = getToken()
-    const storedUser  = getStoredUser()
-
-    if (storedToken) {
-      setToken(storedToken)
-      if (storedUser) {
-        setUser(storedUser)
-        setLoading(false)
-      } else {
-        // Attempt to refresh user from API
-        apiClient.get('/auth/me')
-          .then(({ data }) => {
-            setUser(data.user ?? data)
-            saveUser(data.user ?? data)
-          })
-          .catch(() => {
-            setToken(null)
-            authLogout()
-          })
-          .finally(() => setLoading(false))
-      }
-    } else {
+    if (!storedToken || storedToken === 'undefined' || storedToken === 'null') {
+      authLogout()
       setLoading(false)
+      return
     }
+
+    setToken(storedToken)
+    setUser(getStoredUser())
+
+    apiClient.get('/auth/me', { skipAuthRedirect: true })
+      .then(({ data }) => {
+        const me = data?.data ?? data?.user
+        if (me) {
+          setUser(me)
+          saveUser(me)
+        }
+      })
+      .catch((err) => {
+        // Chỉ đăng xuất khi server từ chối token; lỗi mạng thì giữ phiên hiện tại
+        if (err.response?.status === 401 || err.response?.status === 404) {
+          setToken(null)
+          setUser(null)
+          authLogout()
+        }
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   /**

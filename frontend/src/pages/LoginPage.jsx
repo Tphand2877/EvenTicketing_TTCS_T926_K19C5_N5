@@ -17,7 +17,8 @@ export default function LoginPage() {
   const location   = useLocation()
 
   // Where to redirect after login
-  const returnTo = new URLSearchParams(location.search).get('returnTo') || '/events'
+  const returnParam = new URLSearchParams(location.search).get('returnTo')
+  const returnTo = returnParam && !returnParam.startsWith('/login') ? returnParam : '/events'
 
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
@@ -53,7 +54,7 @@ export default function LoginPage() {
       login(data)
       navigate(returnTo, { replace: true })
     } catch {
-      setError(`Đăng nhập với ${provider} thất bại. Vui lòng thử lại.`)
+      setError(`Đăng nhập bằng ${provider[0].toUpperCase()}${provider.slice(1)} chưa được hỗ trợ. Vui lòng đăng nhập bằng email và mật khẩu.`)
     }
   }
 
@@ -183,6 +184,11 @@ export default function LoginPage() {
               </div>
 
               {/* Form */}
+              {returnParam && !error && (
+                <div className="mb-4 rounded-xl bg-blue-50 text-blue-700 text-sm px-4 py-3">
+                  Vui lòng đăng nhập để tiếp tục. Sau khi đăng nhập bạn sẽ được đưa về trang trước đó.
+                </div>
+              )}
               <LoginForm
                 onSubmit={handleLogin}
                 onSocial={handleSocial}

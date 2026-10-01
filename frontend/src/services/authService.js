@@ -72,22 +72,13 @@ export const resendVerification = async (email) => {
 }
 
 /**
- * Demo OAuth login – shows a mock response without a real provider
+ * Đăng nhập Google/Facebook: backend CHƯA hỗ trợ OAuth.
+ * Trước đây hàm này tạo token giả -> giao diện tưởng đã đăng nhập nhưng mọi API cần
+ * đăng nhập (giữ chỗ...) đều bị 401 và người dùng bị đá ra trang login.
  * @param {'google'|'facebook'|'github'} provider
  */
-export const loginWithProvider = async (provider) => {
-  await new Promise((r) => setTimeout(r, 800))
-  const mockUser = {
-    id: 'demo-001',
-    email: `demo@${provider}.com`,
-    name: `Demo User (${provider})`,
-    role: 'buyer',
-    provider,
-  }
-  const mockToken = 'demo_jwt_token_' + Date.now()
-  saveToken(mockToken)
-  saveUser(mockUser)
-  return { token: mockToken, user: mockUser }
+export const loginWithProvider = async (_provider) => {
+  throw new Error('OAuth chưa được hỗ trợ')
 }
 
 /**
