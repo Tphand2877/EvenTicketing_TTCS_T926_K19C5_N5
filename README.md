@@ -37,12 +37,14 @@ event-ticketing-seatmap/
 │       │       ├── EventCard.jsx               # (SCRUM-80)
 │       │       ├── EventDetail.jsx             # (SCRUM-80)
 │       │       ├── ShowtimeList.jsx            # (SCRUM-80)
-│       │       └── EventListView.jsx           # Buyer xem danh sách event đã tạo — bổ sung để khép kín demo (SCRUM-80)
+│       │       ├── EventListView.jsx           # Buyer xem danh sách event đã tạo — bổ sung để khép kín demo (SCRUM-80)
+│       │       └── eventFormat.js              # Hàm định dạng giá, ngày, danh mục dùng chung (SCRUM-80)
 │       ├── pages/                              # Các trang / route chính
 │       │   ├── LoginPage.jsx                   # (SCRUM-72)
 │       │   ├── RegisterPage.jsx                # (SCRUM-76)
 │       │   ├── EventListPage.jsx               # (SCRUM-80)
-│       │   ├── EventDetailPage.jsx             # (SCRUM-80)
+│       │   ├── EventDetailPage.jsx             # (SCRUM-80, giữ chỗ SCRUM-84)
+│       │   ├── OrganizerDashboardPage.jsx      # Organizer tạo/sửa/xóa event & suất diễn (SCRUM-80)
 │       │   └── CheckoutPage.jsx                # Placeholder cho E-05 Payments & Orders (chưa vào sprint hiện tại)
 │       ├── routes/
 │       │   └── PrivateRoute.jsx                # Chặn route theo vai trò ở phía FE (thuộc S-02)
@@ -60,7 +62,8 @@ event-ticketing-seatmap/
         │   └── database.js                     # Kết nối DB (SCRUM-67 → SCRUM-69)
         ├── migrations/
         │   ├── 001_create_users_and_roles.js   # Bảng users, roles (thuộc S-02)
-        │   └── 002_create_events_and_showtimes.js # Bảng events, showtimes (thuộc S-04)
+        │   ├── 002_create_events_and_showtimes.js # Placeholder rỗng (giữ nguyên vì có thể đã chạy ở các môi trường)
+        │   └── 005_create_events_and_showtimes.js # Bảng events, showtimes thật (SCRUM-80)
         ├── models/
         │   ├── User.js
         │   ├── Role.js

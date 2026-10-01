@@ -4,6 +4,7 @@ const cors = require('cors');
 
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
+const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 
 const app = express();
@@ -19,6 +20,8 @@ app.use(auditAccessDenials);
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/events', eventRouter);       // SCRUM-80
+app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────

@@ -1,0 +1,52 @@
+/**
+ * SCRUM-80 - Events & Showtimes routes
+ * SCRUM-84 (spike) - Seat hold routes
+ *
+ * Dùng createSecureRouter: route nào không khai báo policy sẽ bị từ chối (deny by default).
+ */
+
+const { createSecureRouter } = require('../middleware/secureRoute');
+const {
+  listEvents,
+  getEvent,
+  listMyEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  createShowtime,
+  updateShowtime,
+  deleteShowtime,
+  getAvailability,
+  holdSeats,
+  releaseHold,
+} = require('../controllers/eventController');
+const {
+  validateEvent,
+  validateShowtime,
+  validateSeatHold,
+} = require('../middleware/validateMiddleware');
+
+const MANAGERS = { roles: ['organizer', 'admin'] };
+
+// ─── /api/events ─────────────────────────────────────────────────────────────
+const eventRouter = createSecureRouter();
+
+eventRouter.get('/', { public: true }, listEvents);
+// Khai báo /mine TRƯỚC /:id để không bị hiểu nhầm "mine" là id
+eventRouter.get('/mine', MANAGERS, listMyEvents);
+eventRouter.get('/:id', { public: true }, getEvent);
+eventRouter.post('/', MANAGERS, validateEvent(), createEvent);
+eventRouter.patch('/:id', MANAGERS, validateEvent({ partial: true }), updateEvent);
+eventRouter.delete('/:id', MANAGERS, deleteEvent);
+eventRouter.post('/:id/showtimes', MANAGERS, validateShowtime(), createShowtime);
+
+// ─── /api/showtimes ──────────────────────────────────────────────────────────
+const showtimeRouter = createSecureRouter();
+
+showtimeRouter.delete('/holds/:holdId', { authenticated: true }, releaseHold);
+showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
+showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);
+showtimeRouter.patch('/:id', MANAGERS, validateShowtime({ partial: true }), updateShowtime);
+showtimeRouter.delete('/:id', MANAGERS, deleteShowtime);
+
+module.exports = { eventRouter, showtimeRouter };

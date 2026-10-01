@@ -26,12 +26,17 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Chỉ coi là "hết phiên" khi request có gửi token. Đăng nhập sai mật khẩu cũng trả 401
+    // nhưng không có token -> để LoginPage tự hiển thị lỗi, không reload trang.
+    const sentToken = !!error.config?.headers?.Authorization
+    if (error.response?.status === 401 && sentToken) {
       localStorage.removeItem('et_token')
       localStorage.removeItem('et_user')
-      // Redirect to login preserving the current path
-      const returnTo = encodeURIComponent(window.location.pathname)
-      window.location.href = `/login?returnTo=${returnTo}`
+      // Redirect to login preserving the current path (không redirect nếu đang ở trang login)
+      if (!window.location.pathname.startsWith('/login')) {
+        const returnTo = encodeURIComponent(window.location.pathname)
+        window.location.href = `/login?returnTo=${returnTo}`
+      }
     }
     return Promise.reject(error)
   },
