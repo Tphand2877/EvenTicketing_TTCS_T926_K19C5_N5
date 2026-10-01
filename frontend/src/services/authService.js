@@ -34,7 +34,8 @@ export const login = async (email, password, remember = false) => {
   if (remember && user) {
     saveUser(user)
   }
-  return data
+  // Trả về cùng dạng { token, user } với loginWithProvider để AuthContext.login dùng được
+  return { token, user }
 }
 
 /**

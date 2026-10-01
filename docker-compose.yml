@@ -28,6 +28,9 @@ services:
 
     container_name: eventticketing-backend
 
+    # Chạy migration trước khi mở server để DB luôn đủ bảng
+    command: ["sh", "-c", "npm run migrate && npm start"]
+
     environment:
       PORT: 3000
       DB_HOST: postgres
@@ -35,7 +38,8 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      FRONTEND_URL: http://localhost:8080
+      JWT_SECRET: ${JWT_SECRET:?Thieu JWT_SECRET trong file .env}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
 
     ports:
       - "3000:3000"
@@ -58,7 +62,8 @@ services:
       dockerfile: Dockerfile
 
       args:
-        VITE_API_URL: http://localhost:3000
+        # Gọi API cùng địa chỉ với web, Nginx chuyển /api/ sang backend
+        VITE_API_URL: /api
 
     container_name: eventticketing-frontend
 
