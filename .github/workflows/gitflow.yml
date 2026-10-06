@@ -1,0 +1,41 @@
+name: Gitflow
+
+# Kiểm tra PR đi đúng luồng Gitflow (xem docs/GITFLOW.md):
+#   - Vào main:    chỉ từ release/* hoặc hotfix/*
+#   - Vào develop: từ feature/*, bugfix/*, release/*, hotfix/* (hoặc main khi đồng bộ ngược)
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  branch-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kiểm tra nhánh nguồn và nhánh đích
+        # Tên nhánh truyền qua env, không chèn trực tiếp vào script (tránh chèn lệnh qua tên nhánh)
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          echo "PR: $HEAD_BRANCH -> $BASE_BRANCH"
+
+          case "$BASE_BRANCH" in
+            main)
+              case "$HEAD_BRANCH" in
+                release/*|hotfix/*) ;;
+                *)
+                  echo "::error::Chỉ nhánh release/* hoặc hotfix/* được merge vào main (nhánh hiện tại: $HEAD_BRANCH). Hãy tạo PR vào develop."
+                  exit 1 ;;
+              esac ;;
+            develop)
+              case "$HEAD_BRANCH" in
+                feature/*|bugfix/*|release/*|hotfix/*|main) ;;
+                *)
+                  echo "::error::Nhánh vào develop phải có dạng feature/*, bugfix/*, release/* hoặc hotfix/* (nhánh hiện tại: $HEAD_BRANCH)."
+                  exit 1 ;;
+              esac ;;
+          esac
+
+          echo "Hợp lệ theo Gitflow."
