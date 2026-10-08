@@ -42,8 +42,12 @@ eventRouter.post('/:id/showtimes', MANAGERS, validateShowtime(), createShowtime)
 
 // ─── /api/showtimes ──────────────────────────────────────────────────────────
 const showtimeRouter = createSecureRouter();
+const { listOnSale, getPublicShowtime, getSeatMap } = require('../controllers/publicShowtimeController');
 
+showtimeRouter.get('/', { public: true }, listOnSale);
 showtimeRouter.delete('/holds/:holdId', { authenticated: true }, releaseHold);
+showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
+showtimeRouter.get('/:id', { public: true }, getPublicShowtime);
 showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
 showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);
 showtimeRouter.patch('/:id', MANAGERS, validateShowtime({ partial: true }), updateShowtime);

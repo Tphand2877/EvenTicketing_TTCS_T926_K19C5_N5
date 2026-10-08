@@ -308,3 +308,10 @@ npm run build
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
 * **GitHub Repository:** [EvenTicketing_TTCS_T926_K19C5_N5](https://github.com/Tphand2877/EvenTicketing_TTCS_T926_K19C5_N5)
+# Minh Quang: public queries (T-17, T-19)
+
+Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
+and the single-query seat-state API are documented in
+[docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
+Configure `REDIS_URL` using `.env.example`. T-11/T-15 and per-seat hold/ticket read
+adapters must be connected before these new endpoints are available on staging.
