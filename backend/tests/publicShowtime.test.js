@@ -4,7 +4,7 @@ jest.mock('../src/models/PublicShowtime', () => ({ listOnSale: jest.fn(), findPu
 jest.mock('../src/services/showtimePageCache', () => ({ get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue() }));
 const source = require('../src/models/PublicShowtime');
 const cache = require('../src/services/showtimePageCache');
-const { parsePage } = require('../src/services/publicShowtimeService');
+const { parsePage, createPublicShowtimeService } = require('../src/services/publicShowtimeService');
 const app = require('../src/app');
 const row = (id) => ({
   id, event_id: 1, title: 'Concert', description: 'Public', venue: 'Theatre', category: 'Music', image_url: null,
@@ -41,6 +41,16 @@ test('Cache hit avoids SQL entirely', async () => {
   const res = await request(app).get('/api/showtimes');
   expect(res.body.data).toEqual(value);
   expect(source.listOnSale).not.toHaveBeenCalled();
+});
+test('Cold SQL Date values and Redis JSON values have the same public contract', async () => {
+  let stored;
+  const repo = { listOnSale: jest.fn().mockResolvedValue([{ ...row(1), starts_at: new Date(row(1).starts_at) }]) };
+  const pageCache = { get: async () => stored ? JSON.parse(stored) : null, set: async (_key, value) => { stored = JSON.stringify(value); } };
+  const service = createPublicShowtimeService({ source: repo, pageCache });
+  const first = await service.list({ limit: '1' });
+  expect(first.showtimes[0].starts_at).toBe(row(1).starts_at);
+  expect(await service.list({ limit: '1' })).toEqual(first);
+  expect(repo.listOnSale).toHaveBeenCalledTimes(1);
 });
 test.each(['0', '51', '-1', '2x', '1.5', '1e2', ''])('Invalid limit %s fails before DB/cache', async (limit) => {
   expect((await request(app).get('/api/showtimes').query({ limit })).status).toBe(400);

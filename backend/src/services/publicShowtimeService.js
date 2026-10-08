@@ -26,10 +26,11 @@ const parsePage = ({ limit = '20', cursor } = {}) => {
   return { limit: Number(limit), after };
 };
 const encodeCursor = (row) => Buffer.from(JSON.stringify({ v: 1, startsAt: row.cursor_time, id: row.id })).toString('base64url');
+const isoTime = (value) => value instanceof Date ? value.toISOString() : value;
 const publicShowtime = (row) => ({
   id: row.id, event_id: row.event_id, title: row.title, description: row.description,
   category: row.category, venue: row.venue, image_url: row.image_url,
-  starts_at: row.starts_at, ends_at: row.ends_at, status: row.status,
+  starts_at: isoTime(row.starts_at), ends_at: isoTime(row.ends_at), status: row.status,
   min_price: row.min_price == null ? null : Number(row.min_price),
   max_price: row.max_price == null ? null : Number(row.max_price),
 });
