@@ -1,4 +1,11 @@
 services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
   postgres:
     image: postgres:16-alpine
     container_name: eventticketing-postgres
@@ -40,12 +47,17 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?Thieu JWT_SECRET trong file .env}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SEAT_HOLD_TTL_SECONDS: ${SEAT_HOLD_TTL_SECONDS:-600}
+      SEAT_HOLD_CLEANUP_INTERVAL_MS: ${SEAT_HOLD_CLEANUP_INTERVAL_MS:-30000}
 
     ports:
       - "3000:3000"
 
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     healthcheck:

@@ -52,6 +52,30 @@ export const getAvailability = async (showtimeId) => {
   return data.data
 }
 
+// ── S-10: seat-specific holds and server clock ───────────────────────────────
+
+export const getSeatMap = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/seats`)
+  return data.data
+}
+
+export const getSeatHoldServerTime = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/server-time`)
+  return data.data.serverNow
+}
+
+export const holdSeatIds = async (showtimeId, seatIds) => {
+  const { data } = await apiClient.post(`/showtimes/${showtimeId}/seat-holds`, { seatIds })
+  return data.data.hold
+}
+
+export const releaseSeat = async (showtimeId, holdId, seatId) => {
+  const { data } = await apiClient.delete(
+    `/showtimes/${showtimeId}/seat-holds/${holdId}/seats/${seatId}`
+  )
+  return data.data.hold
+}
+
 export const holdSeats = async (showtimeId, quantity) => {
   const { data } = await apiClient.post(`/showtimes/${showtimeId}/holds`, { quantity })
   return data.data.hold

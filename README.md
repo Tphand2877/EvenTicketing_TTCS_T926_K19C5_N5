@@ -295,16 +295,145 @@ npm run build
 - `GET /api/events/:id` - Lấy chi tiết thông tin sự kiện và các suất diễn liên quan.
 - `POST /api/events` - Tạo sự kiện mới (Yêu cầu quyền `organizer` hoặc `admin`).
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
-- `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
-- `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+- `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
+- `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
+- `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
 
 ---
 
-## 👥 8. Đội ngũ phát triển
+## 8. S-12 / SCRUM-176: Nhả giữ chỗ hết hạn (T-27, T-28)
+
+Giữ chỗ được lưu trong bảng PostgreSQL `seat_holds` (migration `006`), thay cho
+store trong bộ nhớ của spike SCRUM-84. API hiện tại vẫn giữ **số lượng chỗ của
+một suất diễn**, chưa có mã ghế riêng; dữ liệu và API theo từng ghế của S-10/T-22
+cần dùng cùng quy tắc trạng thái và khóa khi được tích hợp.
+
+- `active` và `expires_at > thời gian DB`: trừ vào số chỗ trống.
+- `active` đã hết hạn: truy vấn chỗ trống bỏ qua ngay, dù job chưa chạy.
+- Job đổi giữ chỗ quá hạn từ `active` sang `cancelled`, lưu `cancelled_at`;
+  chạy lại không đổi thời điểm huỷ hoặc ghi nhận huỷ thêm lần nữa.
+- `pending_payment` và `confirmed`: luôn trừ vào sức chứa, job hết hạn giữ chỗ
+  và API huỷ giữ chỗ không được nhả chúng.
+
+`npm start`, `npm run dev` và `node src/app.js` đều chạy job ngay khi khởi động,
+dọn toàn bộ tồn đọng không giới hạn tuổi dữ liệu, rồi lặp mỗi 30 giây. Một tiến
+trình không chạy chồng job; nhiều tiến trình dùng câu UPDATE có điều kiện để
+không huỷ hai lần. Khi DB lỗi, job ghi thông báo chung và thử lại ở lượt kế tiếp.
+Tắt tiến trình chờ job hoàn tất rồi đóng kết nối DB.
+
+Truy vấn chỗ trống chỉ đọc dữ liệu. API tạo/thay giữ chỗ hiện có được nối với
+store PostgreSQL và khóa hàng `showtimes` bằng `FOR UPDATE`, lấy thời gian DB
+sau khi giành khóa và dùng sức chứa từ DB. Đây là bảo toàn hành vi giữ chỗ
+hiện có khi chuyển store để phục vụ S-12; không thêm API hoặc luồng đặt chỗ mới.
+
+### Cấu hình và cập nhật schema
+
+Chạy `cd backend && npm run migrate` trước khi khởi động phiên bản mới.
+Compose phát triển và staging chạy migration trước server.
+Giữ chỗ của spike chỉ có trong bộ nhớ tiến trình cũ và không thể backfill:
+khi triển khai lần đầu, dừng nhận giữ chỗ mới và chờ TTL của các giữ chỗ cũ
+hết trước khi thay phiên bản.
+
+| Biến môi trường | Mặc định | Giá trị hợp lệ |
+| --- | --- | --- |
+| `SEAT_HOLD_TTL_SECONDS` | `600` | Số nguyên dương (giữ quy tắc TTL hiện có) |
+| `SEAT_HOLD_CLEANUP_INTERVAL_MS` | `30000` | Số nguyên 100–2147483647 mili giây |
+
+Giá trị không hợp lệ dùng mặc định. Với Compose, khai báo trong `.env` ở gốc
+repository; chạy trực tiếp thì khai báo trong `backend/.env`.
+
+### Phạm vi S-12 và dữ liệu đã chuyển sang đơn hàng
+
+S-12 gồm **T-27 / SCRUM-177** (job dọn giữ chỗ hết hạn) và **T-28 / SCRUM-178**
+(truy vấn chỗ trống theo thời điểm hết hạn). Bảng giữ chỗ bền vững cần cho job
+khôi phục sau restart; API giữ/hủy hiện có tiếp tục dùng cùng dữ liệu này.
+
+Job chỉ huỷ hàng `status = 'active'`, `order_id IS NULL`, `expires_at <= thời gian DB`.
+Nếu dữ liệu do luồng đơn hàng tạo đã có `status = 'pending_payment'` hoặc
+`confirmed`, job không đụng tới hàng đó và truy vấn vẫn tính chỗ là đang bận.
+Kiểm thử AC4 nạp sẵn các hàng này làm điều kiện đầu vào. S-12 không triển khai
+chuyển giữ chỗ thành đơn hàng, tạo đơn, thanh toán hoặc webhook.
+
+Các endpoint hiện có không đổi:
+`GET /api/showtimes/:id/availability`, `POST /api/showtimes/:id/holds`,
+`DELETE /api/showtimes/holds/:holdId`. Các hàm service nay là bất đồng bộ.
+Lỗi truy vấn/job không in thông tin người dùng, mã đơn hoặc tham số SQL ra log.
+
+### Kiểm thử và nghiệm thu
+
+```bash
+cd backend
+npm test
+npm run lint
+npm run build
+# Cần PostgreSQL thật, cấu hình DB_* trỏ tới database kiểm thử riêng:
+npm run test:integration
+```
+
+Test tích hợp tạo schema tạm riêng rồi xoá schema đó; không dùng dữ liệu người
+dùng. GitHub Actions đặt `RUN_SEAT_HOLD_DB_TESTS=1` và chạy trên PostgreSQL 16;
+DB không truy cập được làm test thất bại, không bỏ qua lỗi. Kiểm thử bao gồm
+đúng mốc hết hạn, startup dọn 150 giữ chỗ tồn đọng trong tiến trình mới, hai
+backend dùng chung DB, 20 người cùng giữ chỗ cuối, các job dọn đồng thời và
+bảo vệ dữ liệu đã thuộc đơn hàng trước các job dọn đồng thời.
+
+Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, CI xanh,
+chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
+không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
+
+## 9. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
+
+T-22 thêm migration `007_create_seat_hold_seats.js`. `seat_holds` là lượt giữ
+chung của một người dùng cho một suất diễn; `seat_hold_seats` liên kết từng mã
+ghế với lượt đó. Thời hạn UTC nằm trên lượt giữ, vì vậy mọi ghế được thêm sau
+đều nhận cùng `expires_at`. Index expiry hiện có của bảng `seat_holds` phục vụ
+job dọn dữ liệu. View `public_seat_holds` chỉ công bố suất diễn, mã ghế, trạng
+thái và thời điểm hết hạn cho truy vấn T-19.
+
+T-23 dùng API mới, giữ nguyên API số lượng cũ của S-12:
+
+```http
+POST /api/showtimes/:id/seat-holds
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"seatIds":[101,102]}
+```
+
+Thành công trả `{data:{hold:{id,showtimeId,seatIds,quantity,expiresAt,serverNow}}}`.
+Mọi ghế trong một request được giữ hoặc bị từ chối cùng nhau. Gửi thêm ghế cho
+cùng lượt giữ sẽ giữ nguyên `expiresAt`; ghế đã bị giữ/bán hoặc suất không còn
+mở bán trả HTTP 409. `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId`
+bỏ một ghế; bỏ ghế cuối cùng sẽ hủy lượt giữ. `SEAT_HOLD_TTL_SECONDS` cấu hình
+thời lượng, mặc định 600 giây.
+
+T-24 tải sơ đồ từ `GET /api/showtimes/:id/seats` của T-19, đo độ lệch giờ qua
+`GET /api/showtimes/:id/server-time`, rồi tính từng nhịp từ `expiresAt` của máy
+chủ. Khi đồng hồ về 0, giao diện tải lại sơ đồ để bỏ trạng thái giữ đã hết hạn.
+
+Các API giữ ghế kiểm tra inventory `seats`, trạng thái bán `showtimes.status`
+và view `public_sold_seats`; thiếu schema/view thì trả 503 để không báo ghế trống
+sai. T-11 cung cấp bảng ghế, T-15 cung cấp trạng thái mở bán và nguồn vé phải
+cung cấp `public_sold_seats` trước khi chạy nghiệm thu tích hợp. Không tạo view
+vé rỗng làm giả trạng thái ghế.
+
+Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chung khi
+thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
+ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
+
+## 👥 10. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
 * **GitHub Repository:** [EvenTicketing_TTCS_T926_K19C5_N5](https://github.com/Tphand2877/EvenTicketing_TTCS_T926_K19C5_N5)
+# Minh Quang: public queries (T-17, T-19)
+
+Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
+and the single-query seat-state API are documented in
+[docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
+Configure `REDIS_URL` using `.env.example`. T-11/T-15 and per-seat hold/ticket read
+adapters must be connected before these new endpoints are available on staging.

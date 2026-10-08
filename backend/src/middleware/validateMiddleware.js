@@ -208,6 +208,29 @@ const validateSeatHold = (req, res, next) => {
   next();
 };
 
+/** SCRUM-171 / T-23: validate concrete seat IDs without coercing strings. */
+const validateSeatIdList = (req, res, next) => {
+  const { seatIds } = req.body || {};
+  if (!Array.isArray(seatIds) || seatIds.length < 1) {
+    return respondErrors(res, ['Danh sách ghế phải có ít nhất một mã ghế.']);
+  }
+  if (seatIds.some((id) => !Number.isSafeInteger(id) || id < 1)
+    || new Set(seatIds).size !== seatIds.length) {
+    return respondErrors(res, ['Mã ghế phải là số nguyên dương và không được trùng.']);
+  }
+  next();
+};
+
+const validateSeatReleaseParams = (req, res, next) => {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.holdId);
+  const seatId = Number(req.params.seatId);
+  if (!isUuid || !Number.isSafeInteger(seatId) || seatId < 1) {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy ghế đang giữ.' });
+  }
+  req.seatId = seatId;
+  next();
+};
+
 module.exports = {
   validateLogin,
   validateRegister,
@@ -215,4 +238,6 @@ module.exports = {
   validateEvent,
   validateShowtime,
   validateSeatHold,
+  validateSeatIdList,
+  validateSeatReleaseParams,
 };

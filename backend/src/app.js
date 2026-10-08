@@ -38,7 +38,8 @@ app.use((req, res) => {
 app.use((err, _req, res, _next) => {
   const status = err.status || err.statusCode || 500;
   if (status >= 500) {
-    console.error('[GlobalError]', err);
+    // Database errors can include query parameters containing user/order data.
+    console.error('[GlobalError] Request failed.');
   }
   res.status(status).json({
     success: false,
@@ -48,12 +49,10 @@ app.use((err, _req, res, _next) => {
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 // Chỉ mở cổng khi chạy trực tiếp (node src/app.js), không mở khi test import file này
-const PORT = process.env.PORT || 3000;
+module.exports = app; // export để test, không tạo timer hoặc mở cổng khi import
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
-    console.log(`📋 Môi trường: ${process.env.NODE_ENV || 'development'}`);
+  require('./server').startServer({ app }).catch(() => {
+    console.error('[Server] Startup failed.');
+    process.exitCode = 1;
   });
 }
-
-module.exports = app; // export để test
