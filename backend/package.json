@@ -21,6 +21,7 @@
     ]
   },
   "dependencies": {
+    "@redis/client": "^6.3.0",
     "argon2": "^0.45.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

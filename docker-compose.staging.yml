@@ -1,4 +1,11 @@
 services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
   postgres:
     image: postgres:16-alpine
     container_name: eventticketing-staging-postgres
@@ -30,6 +37,7 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       FRONTEND_URL: http://localhost:8080
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       SEAT_HOLD_TTL_SECONDS: ${SEAT_HOLD_TTL_SECONDS:-600}
       SEAT_HOLD_CLEANUP_INTERVAL_MS: ${SEAT_HOLD_CLEANUP_INTERVAL_MS:-30000}
 
@@ -38,6 +46,8 @@ services:
 
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     healthcheck:
