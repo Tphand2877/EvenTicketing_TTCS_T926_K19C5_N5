@@ -26,7 +26,7 @@ export default function EventDetail({ event, showtimes }) {
   const [seats, setSeats]                   = useState([])
   const [availability, setAvailability]     = useState(null)
   const [seatMap, setSeatMap]               = useState(null)
-  const [seatMapStatus, setSeatMapStatus]   = useState('idle') // 'idle' | 'loading' | 'loaded' | 'not_on_sale'
+  const [seatMapStatus, setSeatMapStatus]   = useState('idle') // 'idle' | 'loading' | 'loaded' | 'not_on_sale' | 'unavailable'
   const [hold, setHold]                     = useState(null)
   const [busy, setBusy]                     = useState(false)
   const [message, setMessage]               = useState(null)
@@ -54,10 +54,17 @@ export default function EventDetail({ event, showtimes }) {
         setSeatMap(null)
         setSeatMapStatus('not_on_sale')
       }
-    } catch {
-      // 409 / 503 hoặc lỗi mạng: thông báo chưa mở bán (AC3)
+    } catch (err) {
       setSeatMap(null)
-      setSeatMapStatus('not_on_sale')
+      const status = err?.response?.status
+      if (status === 409 || status === 404) {
+        // Suất không mở bán (nháp / đã đóng / đã bắt đầu) hoặc không tồn tại: thông báo chưa mở bán (AC3)
+        setSeatMapStatus('not_on_sale')
+      } else {
+        // 503 (dữ liệu sơ đồ theo ghế chưa sẵn sàng) hoặc lỗi mạng: KHÔNG chặn người mua,
+        // quay về giữ chỗ theo số lượng (fallback) như trước khi có sơ đồ ghế thật.
+        setSeatMapStatus('unavailable')
+      }
     }
   }, [])
 
