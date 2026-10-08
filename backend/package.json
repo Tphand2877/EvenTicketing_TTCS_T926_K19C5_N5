@@ -4,14 +4,15 @@
   "description": "EvenTicketing Backend - S02 Login & Role-Based Access",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "nodemon src/app.js",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
     "build": "node -e \"require('./src/app'); console.log('Backend build check passed')\"",
     "lint": "eslint src tests",
     "migrate": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "test:integration": "node scripts/test-seat-holds.js"
   },
   "jest": {
     "testEnvironment": "node",

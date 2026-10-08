@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - develop
       - staging
       - 'feature/**'
   pull_request:
     branches:
       - main
+      - develop
       - staging
   workflow_dispatch:
 
@@ -78,6 +80,7 @@ jobs:
       DB_NAME: eventticketing
       DB_USER: postgres
       DB_PASSWORD: postgres
+      RUN_SEAT_HOLD_DB_TESTS: '1'
 
     services:
       postgres:

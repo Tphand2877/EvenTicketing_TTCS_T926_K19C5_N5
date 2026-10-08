@@ -14,6 +14,9 @@ const jwt = require('jsonwebtoken');
 const mockEvents = [];
 const mockShowtimes = [];
 
+jest.mock('../src/models/SeatHold', () =>
+  require('./helpers/memorySeatHoldRepository').createMemoryRepository(mockShowtimes));
+
 jest.mock('../src/models/AuditLog', () => ({
   create: jest.fn().mockResolvedValue(1),
 }));
@@ -94,7 +97,7 @@ const validEvent = { title: 'Hòa nhạc Mùa Thu', venue: 'Nhà hát Lớn', ca
 beforeEach(() => {
   mockEvents.length = 0;
   mockShowtimes.length = 0;
-  seatHoldService._reset();
+  require('../src/models/SeatHold').reset();
 });
 
 const createEventWithShowtime = async ({ capacity = 3, startsAt = FUTURE } = {}) => {
@@ -259,6 +262,29 @@ describe('SCRUM-80: Buyer xem sự kiện (public)', () => {
 });
 
 describe('SCRUM-84: Giữ chỗ có thời hạn', () => {
+  test('Availability DB failure is forwarded to the error handler', async () => {
+    const { showtime } = await createEventWithShowtime();
+    const spy = jest.spyOn(seatHoldService, 'getAvailability').mockRejectedValueOnce(new Error('unavailable'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).get(`/api/showtimes/${showtime.id}/availability`);
+    expect(res.status).toBe(500);
+    spy.mockRestore();
+    log.mockRestore();
+  });
+
+  test('Invalid hold UUID returns 404 rather than a database error', async () => {
+    const res = await request(app).delete('/api/showtimes/holds/invalid').set('Authorization', BUYER);
+    expect(res.status).toBe(404);
+  });
+
+  test('Release DB failure is forwarded to the error handler', async () => {
+    const spy = jest.spyOn(seatHoldService, 'releaseHold').mockRejectedValueOnce(new Error('unavailable'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).delete('/api/showtimes/holds/invalid').set('Authorization', BUYER);
+    expect(res.status).toBe(500);
+    spy.mockRestore();
+    log.mockRestore();
+  });
   test('Buyer giữ chỗ thành công, số chỗ trống giảm tương ứng', async () => {
     const { showtime } = await createEventWithShowtime({ capacity: 3 });
 
