@@ -70,7 +70,7 @@ export const holdSeats = async (showtimeId, quantity) => {
 export const releaseHold = async (holdId) => {
   await apiClient.delete(`/showtimes/holds/${holdId}`)
 }
- HEAD
+
 // SCRUM-175 / T-26 – huỷ MỘT ghế đang giữ (API của T-25).
 // TODO: đối chiếu route và format response với T-25 của Thái.
 export const releaseSeat = async (holdId, seat) => {
@@ -123,5 +123,3 @@ export const closeSales = async (showtimeId) => {
   const { data } = await apiClient.post(`/showtimes/${showtimeId}/close-sales`)
   return data
 }
-
- main
