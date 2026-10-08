@@ -17,6 +17,19 @@ export const getCategoryStyle = (category) => CATEGORY_STYLES[category] || DEFAU
 export const formatPrice = (value) =>
   value === null || value === undefined ? 'Chưa có giá' : `${Number(value).toLocaleString('vi-VN')}₫`
 
+export const formatPriceRange = (minPrice, maxPrice, fallbackPrice) => {
+  const min = minPrice != null ? Number(minPrice) : null
+  const max = maxPrice != null ? Number(maxPrice) : null
+  if (min != null && max != null) {
+    if (min === max) return formatPrice(min)
+    return `${formatPrice(min)} - ${formatPrice(max)}`
+  }
+  if (min != null) return `Từ ${formatPrice(min)}`
+  if (max != null) return `Đến ${formatPrice(max)}`
+  if (fallbackPrice != null) return formatPrice(fallbackPrice)
+  return 'Chưa có giá'
+}
+
 export const formatDateTime = (iso) =>
   iso
     ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
@@ -24,3 +37,4 @@ export const formatDateTime = (iso) =>
 
 export const getErrorMessage = (err, fallback = 'Đã có lỗi xảy ra, vui lòng thử lại.') =>
   err?.response?.data?.message || fallback
+

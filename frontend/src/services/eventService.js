@@ -71,3 +71,25 @@ export const releaseHold = async (holdId) => {
   await apiClient.delete(`/showtimes/holds/${holdId}`)
 }
 
+// ── Public showtimes – SCRUM-162 (T-17, T-18) ───────────────────────────────
+
+/**
+ * SCRUM-162 (T-17): Lấy danh sách suất diễn đang mở bán có phân trang cursor
+ * @param {{ limit?: number, cursor?: string }} params
+ */
+export const getPublicShowtimes = async (params = {}) => {
+  const { data } = await apiClient.get('/showtimes', { params })
+  return data.data
+}
+
+/**
+ * SCRUM-162 (T-17 / T-18): Lấy chi tiết suất diễn công khai
+ * @param {number|string} id
+ * @returns {Promise<{ showtime: object, on_sale: boolean }>}
+ */
+export const getPublicShowtime = async (id) => {
+  const { data } = await apiClient.get(`/showtimes/${id}`)
+  return data.data
+}
+
+

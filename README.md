@@ -450,3 +450,15 @@ adapters must be connected before these new endpoints are available on staging.
     - Tải lại trang phản ánh ngay trạng thái ghế vừa bị người khác giữ chuyển sang "Đang có người giữ" (AC2).
   - **T-21**: Tệp mẫu 2000 ghế (`sample-seat-map-2000.json`) và bộ đo thời gian hiển thị: kiểm thử benchmark tự động đo thời gian xử lý và dựng cấu trúc 2000 ghế đạt ~1-2ms, đáp ứng hoàn hảo tiêu chí < 2 giây (AC4).
 
+## 🎪 Sự kiện đang mở bán & chi tiết suất diễn (SCRUM-162 / S-08)
+
+* **User Story:** Là người mua vé tôi muốn thấy các sự kiện đang bán và chi tiết từng suất để chọn suất phù hợp trước khi vào sơ đồ ghế.
+* **Sub-tasks:**
+  - **T-17**: Truy vấn suất diễn đang mở bán có phân trang cursor (`GET /api/showtimes`), chỉ trả về các suất `on_sale` trong tương lai của sự kiện đã publish, sắp xếp theo thời gian diễn (`starts_at ASC, id ASC`), tính toán khoảng giá (`min_price`, `max_price`), có bộ đệm Redis 30 giây đạt tiêu chuẩn NFR (p95 < 500ms khi có 200 suất diễn).
+  - **T-18**: Trang danh sách sự kiện (`EventListPage`) và trang chi tiết suất diễn (`ShowtimeDetailPage` / `/showtimes/:id`):
+    - **AC1:** Người dùng chưa đăng nhập vẫn xem được danh sách sự kiện kèm suất gần nhất được sắp xếp theo ngày diễn.
+    - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
+    - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
+    - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+
+

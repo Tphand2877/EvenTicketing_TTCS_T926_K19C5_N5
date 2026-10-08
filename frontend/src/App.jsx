@@ -8,6 +8,7 @@ import RegisterPage    from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
+import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
@@ -26,8 +27,10 @@ export default function App() {
           <Route path="/" element={<Navigate to="/events" replace />} />
 
           {/* ── Public browsing routes ───────────────────────── */}
-          <Route path="/events"     element={<EventListPage />} />
-          <Route path="/events/:id" element={<EventDetailPage />} />
+          <Route path="/events"         element={<EventListPage />} />
+          <Route path="/events/:id"     element={<EventDetailPage />} />
+          <Route path="/showtimes/:id" element={<ShowtimeDetailPage />} />
+
 
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
