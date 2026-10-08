@@ -33,12 +33,6 @@ const createSeatHoldRepository = (database) => {
     cancelActive: (transaction, id, now) => transaction('seat_holds')
       .where({ id, status: 'active' }).whereNull('order_id')
       .update({ status: 'cancelled', cancelled_at: now }),
-    async convertActive(transaction, id, orderId, now) {
-      const [hold] = await transaction('seat_holds').where({ id, status: 'active' })
-        .whereNull('order_id').andWhere('expires_at', '>', clock(now))
-        .update({ status: 'pending_payment', order_id: orderId }).returning('*');
-      return hold;
-    },
     // One conditional SQL update: repeat/parallel runs do not cancel twice.
     cancelExpired: (now) => database('seat_holds').where({ status: 'active' })
       .whereNull('order_id').andWhere('expires_at', '<=', clock(now))

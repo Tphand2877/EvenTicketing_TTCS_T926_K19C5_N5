@@ -92,11 +92,10 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
   }, 20000);
   test('AC4: pending-payment and confirmed places stay blocked after TTL/cleanup', async () => {
     const pending = await createHold();
-    await service.convertToOrder({ holdId: pending.id, userId: 2, orderId: 'pending-1' });
+    await mockDatabase('seat_holds').where({ id: pending.id }).update({ status: 'pending_payment', order_id: 'existing-pending-order' });
     await expire(pending.id);
     const confirmed = await createHold(3, { showtimeId: 2 });
-    await service.convertToOrder({ holdId: confirmed.id, userId: 3, orderId: 'confirmed-1' });
-    await mockDatabase('seat_holds').where({ id: confirmed.id }).update({ status: 'confirmed' });
+    await mockDatabase('seat_holds').where({ id: confirmed.id }).update({ status: 'confirmed', order_id: 'existing-confirmed-order' });
     await expire(confirmed.id);
     const before = await mockDatabase('seat_holds').orderBy('id');
     expect(await service.cleanupExpired()).toBe(0);
@@ -133,32 +132,15 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     expect((await stored(replacement.id)).status).toBe('active');
     expect(await service.getAvailability({ showtimeId: 1, capacity: 1 })).toMatchObject({ available: 0 });
   });
-  test('Concurrent conversion retries record one order and reject a different order', async () => {
+  test('Concurrent cleanup jobs preserve an expired allocation already assigned to an order', async () => {
     const hold = await createHold();
-    const args = { holdId: hold.id, userId: 2, orderId: 'same-order' };
-    const retries = await Promise.all(Array.from({ length: 8 }, () => service.convertToOrder(args)));
-    expect(retries.every((r) => r.id === hold.id)).toBe(true);
-    await expect(service.convertToOrder({ ...args, orderId: 'other-order' })).rejects.toMatchObject({ code: 'HOLD_EXPIRED' });
-    expect(await mockDatabase('seat_holds').where({ order_id: 'same-order' })).toHaveLength(1);
-  });
-  test('Conversion racing with cleanup of an expired hold cannot create an order', async () => {
-    const hold = await createHold();
+    await mockDatabase('seat_holds').where({ id: hold.id }).update({ status: 'pending_payment', order_id: 'existing-order' });
     await expire(hold.id);
-    const results = await Promise.allSettled([
-      service.convertToOrder({ holdId: hold.id, userId: 2, orderId: 'too-late' }), service.cleanupExpired(),
-    ]);
-    expect(results[0].status).toBe('rejected');
-    expect((await stored(hold.id)).status).toBe('cancelled');
-    expect((await stored(hold.id)).order_id).toBeNull();
-  });
-  test('Conversion before expiry remains protected when cleanup runs concurrently', async () => {
-    const hold = await createHold();
-    await Promise.all([
-      service.convertToOrder({ holdId: hold.id, userId: 2, orderId: 'before-expiry' }), service.cleanupExpired(),
-    ]);
-    await expire(hold.id);
-    expect(await service.cleanupExpired()).toBe(0);
-    expect((await stored(hold.id)).status).toBe('pending_payment');
+    const snapshot = await stored(hold.id);
+    const counts = await Promise.all(Array.from({ length: 8 }, () => service.cleanupExpired()));
+    expect(counts.every((n) => n === 0)).toBe(true);
+    expect(await stored(hold.id)).toEqual(snapshot);
+    expect(await service.getAvailability({ showtimeId: 1, capacity: 1 })).toMatchObject({ available: 0 });
   });
   test('Simultaneous requests from the same buyer leave only one active hold', async () => {
     await Promise.all(Array.from({ length: 10 }, () => createHold()));

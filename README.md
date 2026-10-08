@@ -323,9 +323,10 @@ trình không chạy chồng job; nhiều tiến trình dùng câu UPDATE có đ
 không huỷ hai lần. Khi DB lỗi, job ghi thông báo chung và thử lại ở lượt kế tiếp.
 Tắt tiến trình chờ job hoàn tất rồi đóng kết nối DB.
 
-Truy vấn chỗ trống chỉ đọc dữ liệu. Giao dịch tạo/thay giữ chỗ và chuyển sang
-chờ thanh toán khóa hàng `showtimes` bằng `FOR UPDATE`, lấy thời gian DB sau
-khi giành khóa và dùng sức chứa từ DB. Hai backend không cấp vượt số chỗ cuối.
+Truy vấn chỗ trống chỉ đọc dữ liệu. API tạo/thay giữ chỗ hiện có được nối với
+store PostgreSQL và khóa hàng `showtimes` bằng `FOR UPDATE`, lấy thời gian DB
+sau khi giành khóa và dùng sức chứa từ DB. Đây là bảo toàn hành vi giữ chỗ
+hiện có khi chuyển store để phục vụ S-12; không thêm API hoặc luồng đặt chỗ mới.
 
 ### Cấu hình và cập nhật schema
 
@@ -337,21 +338,23 @@ hết trước khi thay phiên bản.
 
 | Biến môi trường | Mặc định | Giá trị hợp lệ |
 | --- | --- | --- |
-| `SEAT_HOLD_TTL_SECONDS` | `600` | Số nguyên 1–86400 giây |
+| `SEAT_HOLD_TTL_SECONDS` | `600` | Số nguyên dương (giữ quy tắc TTL hiện có) |
 | `SEAT_HOLD_CLEANUP_INTERVAL_MS` | `30000` | Số nguyên 100–2147483647 mili giây |
 
 Giá trị không hợp lệ dùng mặc định. Với Compose, khai báo trong `.env` ở gốc
 repository; chạy trực tiếp thì khai báo trong `backend/.env`.
 
-### Hợp đồng tích hợp với E-05 (đơn hàng / thanh toán)
+### Phạm vi S-12 và dữ liệu đã chuyển sang đơn hàng
 
-Repository chưa có bảng đơn hàng hay endpoint thanh toán. Backend cung cấp
-`await seatHoldService.convertToOrder({ holdId, userId, orderId })` cho phía
-checkout: xác minh chủ sở hữu và TTL, rồi chuyển giữ chỗ còn hiệu lực sang
-`pending_payment`. Gọi lại cùng `holdId`/`orderId` trả cùng giữ chỗ, không tạo
-bản ghi thứ hai. Một mã đơn hàng chỉ gắn được với một giữ chỗ.
-Điểm tích hợp này phải được gọi trước khi ghi nhận thanh toán/bán vé; timeout
-đơn hàng, xác nhận bán và huỷ đơn thuộc E-05. Chưa thêm API thanh toán trong S-12.
+S-12 gồm **T-27 / SCRUM-177** (job dọn giữ chỗ hết hạn) và **T-28 / SCRUM-178**
+(truy vấn chỗ trống theo thời điểm hết hạn). Bảng giữ chỗ bền vững cần cho job
+khôi phục sau restart; API giữ/hủy hiện có tiếp tục dùng cùng dữ liệu này.
+
+Job chỉ huỷ hàng `status = 'active'`, `order_id IS NULL`, `expires_at <= thời gian DB`.
+Nếu dữ liệu do luồng đơn hàng tạo đã có `status = 'pending_payment'` hoặc
+`confirmed`, job không đụng tới hàng đó và truy vấn vẫn tính chỗ là đang bận.
+Kiểm thử AC4 nạp sẵn các hàng này làm điều kiện đầu vào. S-12 không triển khai
+chuyển giữ chỗ thành đơn hàng, tạo đơn, thanh toán hoặc webhook.
 
 Các endpoint hiện có không đổi:
 `GET /api/showtimes/:id/availability`, `POST /api/showtimes/:id/holds`,
@@ -374,7 +377,7 @@ dùng. GitHub Actions đặt `RUN_SEAT_HOLD_DB_TESTS=1` và chạy trên Postgre
 DB không truy cập được làm test thất bại, không bỏ qua lỗi. Kiểm thử bao gồm
 đúng mốc hết hạn, startup dọn 150 giữ chỗ tồn đọng trong tiến trình mới, hai
 backend dùng chung DB, 20 người cùng giữ chỗ cuối, các job dọn đồng thời và
-chuyển giữ chỗ sang đơn hàng chạy lặp/đồng thời.
+bảo vệ dữ liệu đã thuộc đơn hàng trước các job dọn đồng thời.
 
 Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, CI xanh,
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test

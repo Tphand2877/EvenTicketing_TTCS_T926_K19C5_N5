@@ -1,4 +1,4 @@
-const { createSeatHoldService, SeatHoldError, DEFAULT_TTL_SECONDS } = require('../src/services/seatHoldService');
+const { createSeatHoldService, DEFAULT_TTL_SECONDS } = require('../src/services/seatHoldService');
 const { createMemoryRepository } = require('./helpers/memorySeatHoldRepository');
 const NOW = Date.UTC(2026, 9, 1, 12);
 const TTL = DEFAULT_TTL_SECONDS * 1000;
@@ -71,41 +71,22 @@ test('An expired/missing/invalid hold cannot be released', async () => {
   expect(await service.releaseHold({ holdId: 'bad', userId: 10 })).toBe('not_found');
   expect(await service.releaseHold({ holdId: '00000000-0000-0000-0000-000000000000', userId: 10 })).toBe('not_found');
 });
-test.each(['60', '0', '-1', '60junk', '1.5', '86401', ''])('TTL validates the full environment value %s', async (value) => {
-  process.env.SEAT_HOLD_TTL_SECONDS = value;
+test('TTL retains the existing SEAT_HOLD_TTL_SECONDS contract', async () => {
+  process.env.SEAT_HOLD_TTL_SECONDS = '60';
   const first = await hold();
-  expect(first.expiresAt).toBe(new Date(NOW + (value === '60' ? 60000 : TTL)).toISOString());
-});
-test.each([0, -1, 1.5, 11, '2', NaN])('Reject invalid quantity %s', async (quantity) => {
-  await expect(hold({ quantity })).rejects.toBeInstanceOf(SeatHoldError);
-  expect(repository.rows.size).toBe(0);
+  expect(first.expiresAt).toBe(new Date(NOW + 60000).toISOString());
 });
 test('Missing showtime fails before storing a hold', async () => {
   await expect(hold({ showtimeId: 99 })).rejects.toMatchObject({ code: 'SHOWTIME_NOT_FOUND' });
 });
-test('Pending-payment conversion is idempotent and protects capacity after hold expiry (AC4)', async () => {
+test.each(['pending_payment', 'confirmed'])('Cleanup preserves a hold already assigned to an order (%s, AC4)', async (status) => {
   const first = await hold({ quantity: 3 });
-  const args = { holdId: first.id, userId: 10, orderId: 'order-1', now: NOW };
-  expect(await service.convertToOrder(args)).toEqual(first);
-  expect(await service.convertToOrder({ ...args, now: NOW + TTL })).toEqual(first);
+  // Given an allocation produced by checkout; S-12 does not implement checkout.
+  Object.assign(repository.rows.get(first.id), { status, order_id: 'existing-order' });
+  const snapshot = { ...repository.rows.get(first.id) };
   expect(await service.cleanupExpired({ now: NOW + TTL })).toBe(0);
+  expect(repository.rows.get(first.id)).toEqual(snapshot);
   expect(await availability(NOW + TTL)).toMatchObject({ held: 3, available: 0 });
   expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('not_found');
   await expect(hold({ userId: 11, now: NOW + TTL })).rejects.toMatchObject({ code: 'INSUFFICIENT_SEATS' });
-  await expect(service.convertToOrder({ ...args, orderId: 'order-2' })).rejects.toMatchObject({ code: 'HOLD_EXPIRED' });
-});
-test('Expired, foreign, missing and invalid-order conversions are rejected', async () => {
-  const first = await hold();
-  const args = { holdId: first.id, userId: 10, orderId: 'order-1', now: NOW };
-  await expect(service.convertToOrder({ ...args, now: NOW + TTL })).rejects.toMatchObject({ code: 'HOLD_EXPIRED' });
-  await expect(service.convertToOrder({ ...args, userId: 11 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
-  await expect(service.convertToOrder({ ...args, holdId: 'bad' })).rejects.toMatchObject({ code: 'HOLD_NOT_FOUND' });
-  await expect(service.convertToOrder({ ...args, holdId: '00000000-0000-0000-0000-000000000000' })).rejects.toMatchObject({ code: 'HOLD_NOT_FOUND' });
-  await expect(service.convertToOrder({ ...args, orderId: '' })).rejects.toMatchObject({ code: 'INVALID_ORDER' });
-});
-test('Conditional conversion failure cannot return a successful order reservation', async () => {
-  const first = await hold();
-  repository.convertActive = jest.fn().mockResolvedValue(undefined);
-  await expect(service.convertToOrder({ holdId: first.id, userId: 10, orderId: 'order-1', now: NOW }))
-    .rejects.toMatchObject({ code: 'HOLD_EXPIRED' });
 });

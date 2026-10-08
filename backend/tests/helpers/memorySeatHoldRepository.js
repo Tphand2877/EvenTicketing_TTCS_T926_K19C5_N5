@@ -25,12 +25,6 @@ const createMemoryRepository = (showtimes) => {
       Object.assign(hold, { status: 'cancelled', cancelled_at: now });
       return 1;
     },
-    convertActive: async (_transaction, id, orderId, now) => {
-      const hold = rows.get(id);
-      if (hold?.status !== 'active' || new Date(hold.expires_at) <= new Date(now ?? Date.now())) return undefined;
-      Object.assign(hold, { status: 'pending_payment', order_id: orderId });
-      return hold;
-    },
     cancelExpired: async (now) => {
       let count = 0;
       for (const hold of rows.values()) {
