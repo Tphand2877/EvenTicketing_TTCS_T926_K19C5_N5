@@ -92,4 +92,27 @@ export const getPublicShowtime = async (id) => {
   return data.data
 }
 
+// ── Organizer: sơ đồ ghế (S-05) và mở bán / đóng bán (S-07) ────────────────────
+
+/** Mọi suất của một sự kiện (kể cả nháp) kèm seat_count, category_count */
+export const getEventShowtimes = async (eventId) => {
+  const { data } = await apiClient.get(`/events/${eventId}/showtimes`)
+  return data.data.showtimes
+}
+
+/** Nạp/thay sơ đồ ghế: seats = [{ row, number, category }] */
+export const importSeatMap = async (showtimeId, seats) => {
+  const { data } = await apiClient.put(`/showtimes/${showtimeId}/seat-map`, { seats })
+  return data
+}
+
+export const openSales = async (showtimeId) => {
+  const { data } = await apiClient.post(`/showtimes/${showtimeId}/open-sales`)
+  return data
+}
+
+export const closeSales = async (showtimeId) => {
+  const { data } = await apiClient.post(`/showtimes/${showtimeId}/close-sales`)
+  return data
+}
 

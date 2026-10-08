@@ -2,7 +2,7 @@ import { formatDateTime, formatPrice } from './eventFormat'
 
 /**
  * Danh sách suất diễn có thể chọn (SCRUM-80)
- * Suất đã bắt đầu được hiển thị nhưng không cho chọn.
+ * Suất đã bắt đầu hoặc đã đóng bán (S-07) được hiển thị nhưng không cho chọn.
  */
 export default function ShowtimeList({ showtimes, selectedId, onSelect, disabled = false }) {
   if (showtimes.length === 0) {
@@ -15,7 +15,9 @@ export default function ShowtimeList({ showtimes, selectedId, onSelect, disabled
     <div className="space-y-3">
       {showtimes.map((showtime) => {
         const isPast = new Date(showtime.starts_at).getTime() <= now
-        const isDisabled = disabled || isPast
+        // S-07: suất đã đóng bán vẫn hiện nhưng không chọn được
+        const isClosed = showtime.status === 'closed'
+        const isDisabled = disabled || isPast || isClosed
         const isSelected = selectedId === showtime.id
         return (
           <label
@@ -40,6 +42,7 @@ export default function ShowtimeList({ showtimes, selectedId, onSelect, disabled
               <span className="text-sm font-medium text-gray-700">
                 {formatDateTime(showtime.starts_at)}
                 {isPast && <span className="ml-2 text-xs text-gray-400">(đã diễn ra)</span>}
+                {!isPast && isClosed && <span className="ml-2 text-xs text-amber-700">(đã đóng bán)</span>}
               </span>
             </div>
             <span className="text-sm font-bold text-gray-900">{formatPrice(showtime.price)}</span>

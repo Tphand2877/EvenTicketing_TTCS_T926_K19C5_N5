@@ -298,6 +298,9 @@ npm run build
 - `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
 - `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
+- `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
+- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
+- `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
@@ -425,7 +428,36 @@ và tệp 2.000 ghế dưới 5 giây.
 
 ---
 
-## 👥 10. Đội ngũ phát triển
+## 10. S-07: Mở bán / đóng bán suất diễn (T-15, T-16)
+
+**T-15:** migration `008` thêm cột `showtimes.status` (enum `showtime_sale_status`) và bảng
+`showtime_status_logs`. Suất **tạo mới mặc định là nháp**; suất có sẵn trước S-07 được chuyển thành đang bán
+để giữ hành vi cũ.
+
+| Trạng thái | Người mua thấy? | Giữ chỗ mới? | Chuyển sang |
+|---|---|---|---|
+| `draft` (nháp) | Không | Không | `on_sale` (mở bán) |
+| `on_sale` (đang bán) | Có | Có | `closed` (đóng bán) |
+| `closed` (đã đóng bán) | Có, ghi "đã đóng bán" | Không | `on_sale` (mở bán lại) |
+
+- Mở bán bị chặn kèm lý do (409) khi: chưa có sơ đồ ghế (`NO_SEAT_MAP`), sự kiện chưa công khai
+  (`EVENT_NOT_PUBLISHED`), suất đã bắt đầu (`SHOWTIME_STARTED`), hoặc chuyển sai luật
+  (`INVALID_TRANSITION`, `ALREADY_IN_STATUS`).
+- Đóng bán chỉ chặn **giữ chỗ mới**; lượt giữ và đơn đang chờ vẫn huỷ, hết hạn, được job dọn như bình thường.
+  Việc kiểm tra trạng thái nằm trong khoá dòng suất diễn của API giữ chỗ, nên không lượt giữ nào lọt qua sau khi đã đóng.
+- Mỗi lần đổi trạng thái ghi `showtime_status_logs` (trạng thái cũ, mới, id người thao tác, thời điểm). Nhật ký chỉ lưu id, không lưu email.
+
+**T-16:** trang `/organizer` có khu "Suất diễn" dưới mỗi sự kiện: trạng thái, số ghế, nút nạp sơ đồ ghế (JSON),
+nút **Mở bán** / **Đóng bán** / **Mở bán lại**; lý do bị chặn hiện ngay dưới suất đó.
+Script `scripts/seed-demo-events.js` tạo suất demo kèm sơ đồ ghế và đã mở bán.
+
+Kiểm thử: `tests/showtimeSale.test.js` (phân quyền, mã lỗi) và `tests/showtimeSale.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SHOWTIME_SALE_DB_TESTS=1`): 4 AC, nhật ký, migration dữ liệu cũ, và đóng bán
+giữa lúc 20 người đang giữ chỗ.
+
+---
+
+## 👥 11. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -435,7 +467,7 @@ và tệp 2.000 ghế dưới 5 giây.
 Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
 and the single-query seat-state API are documented in
 [docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
-Configure `REDIS_URL` using `.env.example`. T-11 tables now exist (migration 007); T-15 and per-seat hold/ticket read
+Configure `REDIS_URL` using `.env.example`. T-11 (migration 007) and T-15 (migration 008) now exist; per-seat hold/ticket read
 adapters must be connected before these new endpoints are available on staging.
 
 ## 🎟️ Sơ đồ ghế còn trống (SCRUM-165 / S-09)

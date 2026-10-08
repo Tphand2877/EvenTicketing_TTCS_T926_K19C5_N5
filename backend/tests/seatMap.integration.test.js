@@ -45,8 +45,8 @@ describeDatabase('S-05: nạp sơ đồ ghế trên PostgreSQL', () => {
     ]);
     await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S05 fixture', venue: 'Test' });
     await mockDatabase('showtimes').insert([
-      { id: 1, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z' },
-      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z' },
+      { id: 1, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
+      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
   }, 30000);
 
