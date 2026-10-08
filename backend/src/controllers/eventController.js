@@ -258,7 +258,7 @@ const getAvailability = async (req, res, next) => {
     const showtime = await loadBookableShowtime(parseId(req.params.id), res);
     if (!showtime) return undefined;
 
-    const availability = await seatHoldService.getAvailability({
+    const availability = seatHoldService.getAvailability({
       showtimeId: showtime.id,
       capacity: showtime.capacity,
     });
@@ -276,7 +276,7 @@ const holdSeats = async (req, res, next) => {
     const showtime = await loadBookableShowtime(parseId(req.params.id), res);
     if (!showtime) return undefined;
 
-    const hold = await seatHoldService.holdSeats({
+    const hold = seatHoldService.holdSeats({
       showtimeId: showtime.id,
       userId: req.user.userId,
       quantity: req.body.quantity,
@@ -298,20 +298,16 @@ const holdSeats = async (req, res, next) => {
 /**
  * DELETE /api/showtimes/holds/:holdId
  */
-const releaseHold = async (req, res, next) => {
-  try {
-    const result = await seatHoldService.releaseHold({ holdId: req.params.holdId, userId: req.user.userId });
-    if (result === 'not_found') {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy lượt giữ chỗ (có thể đã hết hạn).' });
-    }
-    if (result === 'forbidden') {
-      req.denyReason = `User ${req.user.userId} hủy hold của người khác`;
-      return res.status(403).json({ success: false, message: 'Bạn không thể hủy lượt giữ chỗ của người khác.' });
-    }
-    return res.json({ success: true, message: 'Đã hủy giữ chỗ.' });
-  } catch (err) {
-    return next(err);
+const releaseHold = (req, res) => {
+  const result = seatHoldService.releaseHold({ holdId: req.params.holdId, userId: req.user.userId });
+  if (result === 'not_found') {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy lượt giữ chỗ (có thể đã hết hạn).' });
   }
+  if (result === 'forbidden') {
+    req.denyReason = `User ${req.user.userId} hủy hold của người khác`;
+    return res.status(403).json({ success: false, message: 'Bạn không thể hủy lượt giữ chỗ của người khác.' });
+  }
+  return res.json({ success: true, message: 'Đã hủy giữ chỗ.' });
 };
 
 module.exports = {

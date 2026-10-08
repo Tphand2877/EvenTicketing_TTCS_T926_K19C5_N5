@@ -43,8 +43,7 @@ export default function CheckoutPage() {
     payment: '',
   })
   const [errors, setErrors]       = useState({})
-  const [expired, setExpired]     = useState(() => !!hold
-    && Date.parse(hold.expiresAt) <= Date.now() + (hold.serverOffsetMs || 0))
+  const [expired, setExpired]     = useState(() => !!hold && new Date(hold.expiresAt) <= new Date())
   const [submitted, setSubmitted] = useState(false)
 
   const setField = (e) => {
@@ -144,11 +143,7 @@ export default function CheckoutPage() {
           {/* Summary */}
           <div className="md:col-span-2">
             <div className="card-auth sticky top-20 space-y-4">
-              <SeatHoldTimer
-                expiresAt={hold.expiresAt}
-                serverOffsetMs={hold.serverOffsetMs || 0}
-                onExpire={() => setExpired(true)}
-              />
+              <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={() => setExpired(true)} />
               <h2 className="font-semibold text-gray-900">Tóm tắt đơn hàng</h2>
               <div className="space-y-3 text-sm text-gray-600">
                 <div>

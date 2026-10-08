@@ -1,28 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 
-const getRemainingMs = (expiresAt, serverOffsetMs = 0) => {
-  const deadline = Date.parse(expiresAt)
-  if (!Number.isFinite(deadline)) return 0
-  return Math.max(deadline - (Date.now() + serverOffsetMs), 0)
-}
+const getRemainingMs = (expiresAt) => Math.max(new Date(expiresAt).getTime() - Date.now(), 0)
 
 /**
- * Đồng hồ giữ chỗ theo thời điểm hết hạn từ máy chủ (SCRUM-172 / T-24).
+ * Đồng hồ đếm ngược thời hạn giữ chỗ (SCRUM-84)
  *
- * Mỗi tick tính lại từ deadline và độ lệch đồng hồ đo khi tải sơ đồ. Không
- * đếm lùi theo số tick, nên tab bị ẩn hoặc đồng hồ máy khách lệch không làm sai.
+ * Mỗi tick tính lại từ `expiresAt` thay vì trừ dần 1 giây, vì trình duyệt
+ * làm chậm setInterval khi tab bị ẩn -> trừ dần sẽ lệch so với server.
  *
- * @param {{ expiresAt: string, serverOffsetMs?: number, onExpire?: () => void }} props
+ * @param {{ expiresAt: string, onExpire?: () => void }} props
  */
-export default function SeatHoldTimer({ expiresAt, serverOffsetMs = 0, onExpire }) {
-  const [remainingMs, setRemainingMs] = useState(() => getRemainingMs(expiresAt, serverOffsetMs))
+export default function SeatHoldTimer({ expiresAt, onExpire }) {
+  const [remainingMs, setRemainingMs] = useState(() => getRemainingMs(expiresAt))
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
 
   useEffect(() => {
     let expired = false
     const tick = () => {
-      const ms = getRemainingMs(expiresAt, serverOffsetMs)
+      const ms = getRemainingMs(expiresAt)
       setRemainingMs(ms)
       if (ms === 0 && !expired) {
         expired = true
@@ -33,7 +29,7 @@ export default function SeatHoldTimer({ expiresAt, serverOffsetMs = 0, onExpire 
     const timer = setInterval(tick, 1000)
     tick()
     return () => clearInterval(timer)
-  }, [expiresAt, serverOffsetMs])
+  }, [expiresAt])
 
   const totalSeconds = Math.ceil(remainingMs / 1000)
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0')
