@@ -1,4 +1,4 @@
-const { createSeatHoldService, DEFAULT_TTL_SECONDS } = require('../src/services/seatHoldService');
+const { createSeatHoldService, SeatHoldError, DEFAULT_TTL_SECONDS } = require('../src/services/seatHoldService');
 const { createMemoryRepository } = require('./helpers/memorySeatHoldRepository');
 const NOW = Date.UTC(2026, 9, 1, 12);
 const TTL = DEFAULT_TTL_SECONDS * 1000;
@@ -90,3 +90,44 @@ test.each(['pending_payment', 'confirmed'])('Cleanup preserves a hold already as
   expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('not_found');
   await expect(hold({ userId: 11, now: NOW + TTL })).rejects.toMatchObject({ code: 'INSUFFICIENT_SEATS' });
 });
+
+describe('SCRUM-179: Simultaneous seat hold attempts', () => {
+  test('Held seats cannot be selected by anyone else, even when clicked simultaneously', async () => {
+    // Capacity = 3, each buyer requests 2 seats. Only one buyer can succeed, the other gets INSUFFICIENT_SEATS.
+    const buyer1Promise = hold({ userId: 101, quantity: 2 });
+    const buyer2Promise = hold({ userId: 102, quantity: 2 });
+
+    const results = await Promise.allSettled([buyer1Promise, buyer2Promise]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(SeatHoldError);
+    expect(rejected[0].reason.code).toBe('INSUFFICIENT_SEATS');
+    expect(rejected[0].reason.details.available).toBe(1);
+
+    const activeHolds = [...repository.rows.values()].filter((h) => h.status === 'active');
+    expect(activeHolds).toHaveLength(1);
+    expect(activeHolds[0].quantity).toBe(2);
+  });
+
+  test('Multiple simultaneous buyers competing for the last seat: exactly one succeeds', async () => {
+    // 5 buyers trying to hold the last available seat simultaneously
+    const buyers = [201, 202, 203, 204, 205];
+    const holdPromises = buyers.map((userId) => hold({ userId, quantity: 3 }));
+
+    const results = await Promise.allSettled(holdPromises);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(4);
+    rejected.forEach((r) => {
+      expect(r.reason.code).toBe('INSUFFICIENT_SEATS');
+    });
+
+    expect(await availability()).toEqual({ capacity: 3, held: 3, available: 0 });
+  });
+});
+
