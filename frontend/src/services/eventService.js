@@ -45,10 +45,20 @@ export const createShowtime = async (eventId, showtime) => {
   return data.data.showtime
 }
 
-// ── Seat hold – SCRUM-84 ─────────────────────────────────────────────────────
+// ── Seat hold & Seat map – SCRUM-84, SCRUM-165 (T-19) ────────────────────────
 
 export const getAvailability = async (showtimeId) => {
   const { data } = await apiClient.get(`/showtimes/${showtimeId}/availability`)
+  return data.data
+}
+
+/**
+ * SCRUM-165 (T-19): Truy vấn toàn bộ trạng thái ghế theo suất diễn trong một lần gọi
+ * @param {number|string} showtimeId
+ * @returns {Promise<{ showtime_id: number, seats: Array<{ id: number, row: string, number: number, category_id?: number, category?: string, price?: number, status: 'available'|'held'|'sold' }> }>}
+ */
+export const getSeatMap = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/seats`)
   return data.data
 }
 
@@ -60,3 +70,4 @@ export const holdSeats = async (showtimeId, quantity) => {
 export const releaseHold = async (holdId) => {
   await apiClient.delete(`/showtimes/holds/${holdId}`)
 }
+

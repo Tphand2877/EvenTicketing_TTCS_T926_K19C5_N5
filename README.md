@@ -395,3 +395,16 @@ and the single-query seat-state API are documented in
 [docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
 Configure `REDIS_URL` using `.env.example`. T-11/T-15 and per-seat hold/ticket read
 adapters must be connected before these new endpoints are available on staging.
+
+## 🎟️ Sơ đồ ghế còn trống (SCRUM-165 / S-09)
+
+* **User Story:** Là người mua vé tôi muốn nhìn sơ đồ ghế và biết ghế nào còn trống để chọn được chỗ ngồi mình muốn.
+* **Sub-tasks:**
+  - **T-19**: Truy vấn trạng thái ghế theo suất diễn trong một lần gọi duy nhất (`GET /api/showtimes/:id/seats`), trả về đầy đủ trạng thái của toàn bộ ghế (`available`, `held`, `sold`), không phát sinh N+1 truy vấn.
+  - **T-20**: Vẽ sơ đồ ghế trực quan trên trình duyệt (`SeatMapCanvas`, `SeatLegend`):
+    - 3 trạng thái ghế phân biệt rõ ràng bằng cả màu sắc và ký hiệu (○: Trống / xanh lá; ⏳: Đang có người giữ / vàng hổ phách; ✕: Đã bán / xám; ✓: Đang chọn / hồng tím).
+    - Hỗ trợ phóng to thu nhỏ mượt mà trên điện thoại (+, -, 100%, phạm vi 50% - 220%) và bấm trúng ghế chính xác (AC5).
+    - Suất diễn chưa nạp sơ đồ ghế hiển thị thông báo *"Suất diễn chưa mở bán"*, không render lưới rỗng (AC3).
+    - Tải lại trang phản ánh ngay trạng thái ghế vừa bị người khác giữ chuyển sang "Đang có người giữ" (AC2).
+  - **T-21**: Tệp mẫu 2000 ghế (`sample-seat-map-2000.json`) và bộ đo thời gian hiển thị: kiểm thử benchmark tự động đo thời gian xử lý và dựng cấu trúc 2000 ghế đạt ~1-2ms, đáp ứng hoàn hảo tiêu chí < 2 giây (AC4).
+
