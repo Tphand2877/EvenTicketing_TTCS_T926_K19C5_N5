@@ -7,12 +7,14 @@
  * SCRUM-84 (spike) - Giữ chỗ có thời hạn cho một suất diễn
  *
  * S-05 / T-12 - Organizer nạp sơ đồ ghế từ tệp JSON
+ * S-07 / T-15 - Mở bán / đóng bán suất diễn
  */
 
 const Event = require('../models/Event');
 const Showtime = require('../models/Showtime');
 const seatHoldService = require('../services/seatHoldService');
 const seatMapService = require('../services/seatMapService');
+const showtimeSaleService = require('../services/showtimeSaleService');
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
@@ -111,10 +113,11 @@ const listEvents = async (req, res, next) => {
 const getEvent = async (req, res, next) => {
   try {
     const id = parseId(req.params.id);
-    const event = id ? await Event.findById(id) : null;
+    const event = id ? await Event.findPublicById(id) : null;
     if (!event || event.status !== 'published') return notFound(res);
 
-    const showtimes = await Showtime.listByEvent(id);
+    // S-07: người mua không thấy suất nháp; suất đã đóng bán vẫn hiện (không giữ chỗ được)
+    const showtimes = await Showtime.listVisibleByEvent(id);
     return res.json({
       success: true,
       data: { event: formatEvent(event), showtimes },
@@ -242,7 +245,8 @@ const deleteShowtime = async (req, res, next) => {
 const loadBookableShowtime = async (showtimeId, res) => {
   const showtime = showtimeId ? await Showtime.findById(showtimeId) : null;
   const event = showtime ? await Event.findById(showtime.event_id) : null;
-  if (!showtime || !event || event.status !== 'published') {
+  // S-07: suất nháp không hiện với người mua
+  if (!showtime || !event || event.status !== 'published' || showtime.status === 'draft') {
     notFound(res, 'Không tìm thấy suất diễn.');
     return null;
   }
@@ -345,7 +349,71 @@ const importSeatMap = async (req, res, next) => {
   }
 };
 
+// ─── S-07 / T-15: Mở bán / đóng bán ──────────────────────────────────────────
+
+/**
+ * GET /api/events/:id/showtimes — organizer/admin xem mọi suất (kể cả nháp) kèm số ghế
+ */
+const listEventShowtimes = async (req, res, next) => {
+  try {
+    const eventId = parseId(req.params.id);
+    if (!(await loadManageableEvent(eventId, req, res))) return undefined;
+
+    const showtimes = await Showtime.listByEventWithSeatMap(eventId);
+    return res.json({ success: true, data: { showtimes } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+const changeSaleStatus = (action) => async (req, res, next) => {
+  try {
+    const showtime = await loadManageableShowtime(parseId(req.params.id), req, res);
+    if (!showtime) return undefined;
+
+    const result = await showtimeSaleService.changeStatus({
+      showtimeId: showtime.id, action, userId: req.user.userId,
+    });
+    return res.json({
+      success: true,
+      message: action === 'open' ? 'Đã mở bán suất diễn.' : 'Đã đóng bán suất diễn.',
+      data: result,
+    });
+  } catch (err) {
+    if (err instanceof showtimeSaleService.ShowtimeSaleError) {
+      const status = err.code === 'SHOWTIME_NOT_FOUND' ? 404 : 409;
+      return res.status(status).json({ success: false, code: err.code, message: err.message });
+    }
+    return next(err);
+  }
+};
+
+/** POST /api/showtimes/:id/open-sales */
+const openSales = changeSaleStatus('open');
+
+/** POST /api/showtimes/:id/close-sales */
+const closeSales = changeSaleStatus('close');
+
+/**
+ * GET /api/showtimes/:id/status-log — nhật ký đổi trạng thái (organizer sở hữu/admin)
+ */
+const getStatusLog = async (req, res, next) => {
+  try {
+    const showtime = await loadManageableShowtime(parseId(req.params.id), req, res);
+    if (!showtime) return undefined;
+
+    const logs = await showtimeSaleService.listStatusLog(showtime.id);
+    return res.json({ success: true, data: { logs } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
+  listEventShowtimes,
+  openSales,
+  closeSales,
+  getStatusLog,
   importSeatMap,
   listEvents,
   getEvent,

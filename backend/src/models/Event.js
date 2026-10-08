@@ -4,11 +4,15 @@ const TABLE = 'events';
 
 /**
  * Query cơ sở: event + tên organizer + giá thấp nhất + suất diễn sắp tới gần nhất
+ * publicOnly: chỉ tính suất người mua thấy được (bỏ suất nháp - S-07)
  */
-const baseQuery = () =>
+const baseQuery = ({ publicOnly = false } = {}) =>
   db(TABLE)
     .leftJoin('users', 'events.organizer_id', 'users.id')
-    .leftJoin('showtimes', 'showtimes.event_id', 'events.id')
+    .leftJoin('showtimes', function () {
+      this.on('showtimes.event_id', '=', 'events.id');
+      if (publicOnly) this.andOnVal('showtimes.status', '<>', 'draft');
+    })
     .groupBy('events.id', 'users.full_name')
     .select(
       'events.*',
@@ -30,7 +34,7 @@ const Event = {
    */
   listPublished: async ({ search, category, limit, offset }) => {
     const rowsQuery = applyFilters(
-      baseQuery().where('events.status', 'published'),
+      baseQuery({ publicOnly: true }).where('events.status', 'published'),
       { search, category }
     )
       .orderByRaw('MIN(showtimes.starts_at) ASC NULLS LAST')
@@ -61,6 +65,9 @@ const Event = {
   listAll: () => baseQuery().orderBy('events.created_at', 'desc'),
 
   findById: (id) => baseQuery().where('events.id', id).first(),
+
+  /** Chi tiết công khai: thống kê chỉ tính suất không ở trạng thái nháp (S-07) */
+  findPublicById: (id) => baseQuery({ publicOnly: true }).where('events.id', id).first(),
 
   create: (data) => db(TABLE).insert(data).returning('*'),
 

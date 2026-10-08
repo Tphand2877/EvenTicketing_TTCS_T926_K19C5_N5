@@ -85,6 +85,7 @@ jobs:
       RUN_PUBLIC_QUERY_REDIS_TESTS: '1'
       RUN_SEAT_HOLD_DB_TESTS: '1'
       RUN_SEAT_MAP_DB_TESTS: '1'
+      RUN_SHOWTIME_SALE_DB_TESTS: '1'
 
     services:
       redis:

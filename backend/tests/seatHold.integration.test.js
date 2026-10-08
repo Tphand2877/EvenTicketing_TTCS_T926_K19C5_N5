@@ -36,8 +36,8 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     })));
     await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test' });
     await mockDatabase('showtimes').insert([
-      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z' },
-      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z' },
+      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
+      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
   }, 30000);
   beforeEach(async () => {
@@ -80,7 +80,7 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
   test('AC3: fresh process clears the entire old backlog and preserves a live hold', async () => {
     const live = await createHold();
     const shows = Array.from({ length: 150 }, (_, i) => ({
-      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z',
+      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale',
     }));
     await mockDatabase('showtimes').insert(shows);
     await mockDatabase('seat_holds').insert(shows.map((s) => ({

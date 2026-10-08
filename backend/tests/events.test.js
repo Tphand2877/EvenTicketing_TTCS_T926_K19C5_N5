@@ -46,6 +46,10 @@ jest.mock('../src/models/Event', () => {
       const e = mockEvents.find((x) => x.id === id);
       return e ? withStats(e) : undefined;
     }),
+    findPublicById: jest.fn(async (id) => {
+      const e = mockEvents.find((x) => x.id === id);
+      return e ? withStats(e) : undefined;
+    }),
     create: jest.fn(async (data) => {
       const e = { id: mockEvents.length + 1, status: 'published', category: 'Khac', ...data };
       mockEvents.push(e);
@@ -66,9 +70,13 @@ jest.mock('../src/models/Event', () => {
 
 jest.mock('../src/models/Showtime', () => ({
   listByEvent: jest.fn(async (eventId) => mockShowtimes.filter((s) => s.event_id === eventId)),
+  listVisibleByEvent: jest.fn(async (eventId) =>
+    mockShowtimes.filter((s) => s.event_id === eventId && s.status !== 'draft')),
+  listByEventWithSeatMap: jest.fn(async (eventId) =>
+    mockShowtimes.filter((s) => s.event_id === eventId).map((s) => ({ ...s, seat_count: 0, category_count: 0 }))),
   findById: jest.fn(async (id) => mockShowtimes.find((s) => s.id === id)),
   create: jest.fn(async (data) => {
-    const s = { id: mockShowtimes.length + 1, ends_at: null, ...data };
+    const s = { id: mockShowtimes.length + 1, ends_at: null, status: 'draft', ...data };
     mockShowtimes.push(s);
     return [s];
   }),
@@ -100,13 +108,16 @@ beforeEach(() => {
   require('../src/models/SeatHold').reset();
 });
 
-const createEventWithShowtime = async ({ capacity = 3, startsAt = FUTURE } = {}) => {
+// status: trạng thái mở bán (S-07). Mặc định mô phỏng suất đã được mở bán.
+const createEventWithShowtime = async ({ capacity = 3, startsAt = FUTURE, status = 'on_sale' } = {}) => {
   const ev = await request(app).post('/api/events').set('Authorization', ORGANIZER).send(validEvent);
   const st = await request(app)
     .post(`/api/events/${ev.body.data.event.id}/showtimes`)
     .set('Authorization', ORGANIZER)
     .send({ starts_at: startsAt, price: 350000, capacity });
-  return { event: ev.body.data.event, showtime: st.body.data.showtime };
+  const stored = mockShowtimes.find((s) => s.id === st.body.data.showtime.id);
+  stored.status = status;
+  return { event: ev.body.data.event, showtime: stored };
 };
 
 describe('SCRUM-80: Organizer quản lý sự kiện', () => {
