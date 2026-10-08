@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - develop
       - staging
       - 'feature/**'
   pull_request:
     branches:
       - main
+      - develop
       - staging
   workflow_dispatch:
 
@@ -81,6 +83,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       RUN_PUBLIC_QUERY_DB_TESTS: '1'
       RUN_PUBLIC_QUERY_REDIS_TESTS: '1'
+      RUN_SEAT_HOLD_DB_TESTS: '1'
 
     services:
       redis:

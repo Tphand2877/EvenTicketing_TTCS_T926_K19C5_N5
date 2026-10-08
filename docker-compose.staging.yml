@@ -27,6 +27,7 @@ services:
   backend:
     image: eventticketing-backend:staging
     container_name: eventticketing-staging-backend
+    command: ["sh", "-c", "npm run migrate && npm start"]
 
     environment:
       PORT: 3000
@@ -37,6 +38,8 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       FRONTEND_URL: http://localhost:8080
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SEAT_HOLD_TTL_SECONDS: ${SEAT_HOLD_TTL_SECONDS:-600}
+      SEAT_HOLD_CLEANUP_INTERVAL_MS: ${SEAT_HOLD_CLEANUP_INTERVAL_MS:-30000}
 
     ports:
       - "3000:3000"
