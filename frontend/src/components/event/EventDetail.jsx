@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
+  getCurrentSeatHold,
   getSeatHoldServerTime,
   getSeatMap,
   holdSeatIds,
@@ -18,12 +19,15 @@ const seatName = (seat) => `${seat.row}${seat.number}`
 
 /** Event details with seat-specific holds and one shared server deadline (S-10). */
 export default function EventDetail({ event, showtimes }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { color, emoji } = getCategoryStyle(event.category)
 
-  const [selectedId, setSelectedId] = useState(null)
+  const selectedId = useMemo(() => {
+    const requestedId = new URLSearchParams(location.search).get('showtimeId')
+    return showtimes.find((showtime) => String(showtime.id) === requestedId)?.id ?? null
+  }, [location.search, showtimes])
   const [seatMap, setSeatMap] = useState(null)
   const [hold, setHold] = useState(null)
   const [clockOffsetMs, setClockOffsetMs] = useState(0)
@@ -42,17 +46,37 @@ export default function EventDetail({ event, showtimes }) {
     setMapError(null)
     const requestStartedAt = Date.now()
     try {
-      const [mapData, serverNow] = await Promise.all([
-        getSeatMap(showtimeId),
-        getSeatHoldServerTime(showtimeId),
-      ])
-      const responseReceivedAt = Date.now()
+      let mapData
+      let serverNow
+      let restoredHold = null
+      let offsetMs = 0
+
+      if (isAuthenticated) {
+        // Restore the server-owned hold before requesting/rendering the seat map.
+        const current = await getCurrentSeatHold(showtimeId)
+        const holdReceivedAt = Date.now()
+        if (requestId !== mapRequestId.current) return
+        serverNow = current.serverNow
+        const serverTimestamp = Date.parse(serverNow)
+        const midpoint = (requestStartedAt + holdReceivedAt) / 2
+        offsetMs = Number.isFinite(serverTimestamp) ? serverTimestamp - midpoint : 0
+        restoredHold = current.hold ? { ...current.hold, serverOffsetMs: offsetMs } : null
+        mapData = await getSeatMap(showtimeId)
+      } else {
+        [mapData, serverNow] = await Promise.all([
+          getSeatMap(showtimeId),
+          getSeatHoldServerTime(showtimeId),
+        ])
+        const responseReceivedAt = Date.now()
+        const serverTimestamp = Date.parse(serverNow)
+        const midpoint = (requestStartedAt + responseReceivedAt) / 2
+        offsetMs = Number.isFinite(serverTimestamp) ? serverTimestamp - midpoint : 0
+      }
       if (requestId !== mapRequestId.current) return
 
-      const serverTimestamp = Date.parse(serverNow)
-      const midpoint = (requestStartedAt + responseReceivedAt) / 2
       setSeatMap(mapData)
-      setClockOffsetMs(Number.isFinite(serverTimestamp) ? serverTimestamp - midpoint : 0)
+      setHold(restoredHold)
+      setClockOffsetMs(offsetMs)
     } catch (error) {
       if (requestId !== mapRequestId.current) return
       setSeatMap(null)
@@ -60,20 +84,30 @@ export default function EventDetail({ event, showtimes }) {
     } finally {
       if (requestId === mapRequestId.current) setMapLoading(false)
     }
-  }, [])
+  }, [isAuthenticated])
 
   useEffect(() => {
     setSeatMap(null)
+    setHold(null)
     setMapError(null)
     setMessage(null)
-    if (!selectedId) return undefined
+    if (!selectedId) {
+      setMapLoading(false)
+      return undefined
+    }
+    if (authLoading) {
+      setMapLoading(true)
+      return () => { mapRequestId.current += 1 }
+    }
 
     refreshSeatMap(selectedId)
     return () => { mapRequestId.current += 1 }
-  }, [selectedId, refreshSeatMap])
+  }, [selectedId, authLoading, refreshSeatMap])
 
   const handleSelectShowtime = (id) => {
-    setSelectedId(id)
+    const params = new URLSearchParams(location.search)
+    params.set('showtimeId', String(id))
+    navigate(`${location.pathname}?${params.toString()}${location.hash}`, { replace: true })
     setHold(null)
     setMessage(null)
   }

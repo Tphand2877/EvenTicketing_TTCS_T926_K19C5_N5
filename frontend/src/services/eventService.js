@@ -64,6 +64,11 @@ export const getSeatHoldServerTime = async (showtimeId) => {
   return data.data.serverNow
 }
 
+export const getCurrentSeatHold = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/seat-holds/current`)
+  return data.data
+}
+
 export const holdSeatIds = async (showtimeId, seatIds) => {
   const { data } = await apiClient.post(`/showtimes/${showtimeId}/seat-holds`, { seatIds })
   return data.data.hold

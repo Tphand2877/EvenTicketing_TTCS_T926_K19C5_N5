@@ -51,6 +51,7 @@ showtimeRouter.get('/', { public: true }, listOnSale);
 showtimeRouter.delete('/holds/:holdId', { authenticated: true }, releaseHold);
 showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
 showtimeRouter.get('/:id/server-time', { public: true }, seatSpecificHoldController.getServerTime);
+showtimeRouter.get('/:id/seat-holds/current', { authenticated: true }, seatSpecificHoldController.getCurrentHold);
 showtimeRouter.post('/:id/seat-holds', { authenticated: true }, validateSeatIdList, seatSpecificHoldController.holdSeats);
 showtimeRouter.delete(
   '/:id/seat-holds/:holdId/seats/:seatId',

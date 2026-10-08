@@ -25,6 +25,20 @@ const getServerTime = async (req, res, next) => {
   }
 };
 
+const getCurrentHold = async (req, res, next) => {
+  const showtimeId = parseShowtimeId(req.params.id);
+  if (!showtimeId) return res.status(404).json({ success: false, message: 'Không tìm thấy suất diễn.' });
+  try {
+    const data = await seatSpecificHoldService.getCurrentHold({
+      showtimeId,
+      userId: req.user.userId,
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendError(error, req, res, next);
+  }
+};
+
 const holdSeats = async (req, res, next) => {
   const showtimeId = parseShowtimeId(req.params.id);
   if (!showtimeId) return res.status(404).json({ success: false, message: 'Không tìm thấy suất diễn.' });
@@ -67,4 +81,4 @@ const releaseSeat = async (req, res, next) => {
   }
 };
 
-module.exports = { getServerTime, holdSeats, releaseSeat };
+module.exports = { getServerTime, getCurrentHold, holdSeats, releaseSeat };

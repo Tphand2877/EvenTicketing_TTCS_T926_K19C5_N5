@@ -297,6 +297,7 @@ npm run build
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
 - `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
 - `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
+- `GET /api/showtimes/:id/seat-holds/current` - Lấy lượt giữ còn hạn và mã ghế của tài khoản hiện tại (Yêu cầu đăng nhập).
 - `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
 
@@ -425,7 +426,25 @@ Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chu
 thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
 ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
 
-## 👥 10. Đội ngũ phát triển
+## 10. S-14 / SCRUM-183: Khôi phục lượt giữ khi mở lại trang
+
+T-32 thêm endpoint đã xác thực `GET /api/showtimes/:id/seat-holds/current`.
+Endpoint chỉ trả lượt giữ `active` của người đăng nhập nếu `expires_at` còn sau
+`statement_timestamp()` của PostgreSQL. Kết quả gồm mã ghế cụ thể, `expiresAt`
+và `serverNow`; nếu chưa giữ ghế, người dùng khác đang giữ, hoặc lượt giữ đã
+hết hạn thì `hold` là `null`. API chỉ đọc thời hạn và không dựa vào đồng hồ hay
+danh sách ghế lưu ở trình duyệt.
+
+T-33 lưu `showtimeId` đang chọn trong query của URL, không lưu danh sách ghế.
+Khi mở lại trang hoặc trở lại sau đăng nhập trên thiết bị khác, giao diện gọi
+endpoint hiện tại trước khi tải sơ đồ; nếu còn lượt giữ, các ghế của chính người
+dùng được chọn lại và bộ đếm dùng `expiresAt` cùng `serverNow`. Nếu thời hạn đã
+qua, endpoint không trả hold và sơ đồ T-19 hiển thị ghế là chỗ trống.
+
+Kiểm thử tích hợp PostgreSQL cho T-32 xác nhận mã ghế và hạn giữ của chủ sở hữu,
+không lộ hold cho tài khoản khác, bỏ qua hold hết hạn và yêu cầu đăng nhập.
+
+## 👥 11. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)

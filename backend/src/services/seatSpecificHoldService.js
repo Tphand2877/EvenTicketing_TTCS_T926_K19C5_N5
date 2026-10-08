@@ -164,6 +164,56 @@ const createSeatSpecificHoldService = (db = database, { ttlSeconds = getTtlSecon
   };
 
   return {
+    async getCurrentHold({ showtimeId, userId }) {
+      try {
+        const { rows } = await db.raw(`
+          SELECT s.id AS showtime_id,
+            statement_timestamp() AS server_now,
+            holds.id AS hold_id, holds.expires_at, holds.quantity,
+            allocations.seat_id
+          FROM showtimes AS s
+          LEFT JOIN seat_holds AS holds
+            ON holds.showtime_id = s.id
+            AND holds.user_id = ?
+            AND holds.status = 'active'
+            AND holds.expires_at > statement_timestamp()
+          LEFT JOIN seat_hold_seats AS allocations
+            ON allocations.showtime_id = s.id
+            AND allocations.hold_id = holds.id
+          WHERE s.id = ?
+          ORDER BY allocations.seat_id
+        `, [userId, showtimeId]);
+
+        if (rows.length === 0) {
+          throw new SeatSpecificHoldError('SHOWTIME_NOT_FOUND', 'Không tìm thấy suất diễn.', 404);
+        }
+
+        const serverNow = new Date(rows[0].server_now).toISOString();
+        if (rows[0].hold_id === null) return { hold: null, serverNow };
+
+        const seatIds = rows
+          .filter((row) => row.seat_id !== null)
+          .map((row) => Number(row.seat_id))
+          .sort((a, b) => a - b);
+        if (seatIds.length !== Number(rows[0].quantity)) {
+          throw new SeatSpecificHoldError(
+            'SEAT_DATA_NOT_READY',
+            'Dữ liệu ghế chưa sẵn sàng.',
+            503
+          );
+        }
+
+        const hold = holdResponse({
+          id: rows[0].hold_id,
+          showtime_id: rows[0].showtime_id,
+          expires_at: rows[0].expires_at,
+        }, seatIds, serverNow);
+        return { hold, serverNow };
+      } catch (error) {
+        return serializeDbError(error);
+      }
+    },
+
     async getServerTime(showtimeId) {
       try {
         const showtime = await loadShowtime(db, showtimeId);

@@ -227,6 +227,54 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     expect(Number.isFinite(Date.parse(clock.body.data.serverNow))).toBe(true);
   });
 
+  test('S-14 T-32: current-hold API restores only the requesting buyer seat IDs and DB deadline', async () => {
+    const created = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [2, 1] });
+    expect(created.status).toBe(201);
+
+    const ownHold = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(2));
+    expect(ownHold.status).toBe(200);
+    expect(ownHold.body.data.hold).toMatchObject({
+      id: created.body.data.hold.id,
+      showtimeId: 1,
+      seatIds: [1, 2],
+      quantity: 2,
+      expiresAt: created.body.data.hold.expiresAt,
+    });
+    expect(Number.isFinite(Date.parse(ownHold.body.data.serverNow))).toBe(true);
+    expect(ownHold.body.data.hold).not.toHaveProperty('userId');
+
+    const anotherBuyer = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(3));
+    expect(anotherBuyer.status).toBe(200);
+    expect(anotherBuyer.body.data.hold).toBeNull();
+  });
+
+  test('S-14 T-32: an expired hold is omitted when the buyer returns', async () => {
+    const created = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2] });
+    await expire(created.body.data.hold.id);
+
+    const response = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(2));
+    expect(response.status).toBe(200);
+    expect(response.body.data.hold).toBeNull();
+    expect(Number.isFinite(Date.parse(response.body.data.serverNow))).toBe(true);
+  });
+
+  test('S-14 T-32: current-hold API requires authentication', async () => {
+    const response = await request(app).get('/api/showtimes/1/seat-holds/current');
+    expect(response.status).toBe(401);
+  });
+
   test('S-10 AC2: a sold seat rejects the whole selection without keeping a partial hold', async () => {
     await mockDatabase('fixture_tickets').insert({ showtime_id: 1, seat_id: 2, status: 'confirmed' });
     const response = await request(app)
