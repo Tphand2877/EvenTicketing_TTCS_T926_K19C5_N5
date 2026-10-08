@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getAvailability, getSeatMap, holdSeats, releaseHold, releaseSeat } from '../../services/eventService'
+import { getAvailability, getSeatMap, holdSeats, releaseHold } from '../../services/eventService'
 import SeatHoldTimer from '../seatmap/SeatHoldTimer'
 import SeatLegend from '../seatmap/SeatLegend'
 import SeatMapCanvas from '../seatmap/SeatMapCanvas'
@@ -116,12 +116,12 @@ export default function EventDetail({ event, showtimes }) {
     setMessage(null)
     try {
       const newHold = await holdSeats(selectedId, ticketCount)
-// SCRUM-175: lưu thêm mã ghế để có thể bỏ từng ghế
-setHold({
-  ...newHold,
-  seats: isMapMode ? seats.map(seatName) : [],
-  seatIds: isMapMode ? seats : [],
-})
+      // SCRUM-175: lưu thêm mã ghế để có thể bỏ từng ghế
+      setHold({
+        ...newHold,
+        seats: isMapMode ? seats.map(seatName) : [],
+        seatIds: isMapMode ? seats : [],
+      })
       setSeats([])
     } catch (err) {
       setMessage({ type: 'error', text: getErrorMessage(err, 'Không thể giữ chỗ, vui lòng thử lại.') })
@@ -146,19 +146,21 @@ setHold({
     }
   }
 
-  // SCRUM-175 (T-26): bỏ chọn MỘT ghế đang giữ. Chỉ một request mạng, nên cập nhật
-  // số chỗ còn lại tại chỗ thay vì gọi lại getAvailability.
-  // TODO: đối chiếu route và response với T-25 của Thái.
+  // SCRUM-175 (T-26): bỏ chọn MỘT ghế đang giữ. Lượt giữ trên main tính theo số lượng,
+  // nên giữ lại (n - 1) chỗ: POST /holds thay lượt giữ cũ của người dùng trong cùng
+  // một transaction, không có khoảng hở để người khác lấy mất chỗ. Bỏ ghế cuối thì huỷ lượt giữ.
+  // Khi API huỷ từng ghế (T-25) lên main thì chuyển sang gọi API đó.
   const handleReleaseSeat = async (seatId) => {
     setBusy(true)
     setMessage(null)
     try {
-      const updated = await releaseSeat(hold.id, seatId)
       const seatIds = heldSeatIds.filter((s) => s !== seatId)
-      if (!updated || seatIds.length === 0) {
+      if (seatIds.length === 0) {
+        await releaseHold(hold.id)
         setHold(null) // hết ghế -> ẩn đồng hồ
       } else {
-        setHold({ ...hold, ...updated, seatIds, seats: seatIds.map(seatName) })
+        const updated = await holdSeats(selectedId, seatIds.length)
+        setHold({ ...updated, seatIds, seats: seatIds.map(seatName) })
       }
       setAvailability((prev) => (prev ? { ...prev, available: prev.available + 1 } : prev))
     } catch (err) {
@@ -169,18 +171,17 @@ setHold({
   }
 
   const handleExpire = useCallback(() => {
-  setHold(null)
-  setMessage({ type: 'error', text: 'Hết thời gian giữ chỗ. Vui lòng chọn lại.' })
+    setHold(null)
+    setMessage({ type: 'error', text: 'Hết thời gian giữ chỗ. Vui lòng chọn lại.' })
+    if (selectedId) {
+      refreshAvailability(selectedId)
+      refreshSeatMap(selectedId)
+    }
+  }, [selectedId, refreshAvailability, refreshSeatMap])
 
-  if (selectedId) {
-    refreshAvailability(selectedId)
-    refreshSeatMap(selectedId)
-  }
-}, [selectedId, refreshAvailability, refreshSeatMap])
-
-// SCRUM-175: danh sách ghế đang giữ
-const heldSeatIds = hold?.seatIds ?? []
-const heldCount = heldSeatIds.length > 0 ? heldSeatIds.length : (hold?.quantity ?? 0)
+  // SCRUM-175: danh sách ghế đang giữ
+  const heldSeatIds = hold?.seatIds ?? []
+  const heldCount = heldSeatIds.length > 0 ? heldSeatIds.length : (hold?.quantity ?? 0)
 
   return (
     <>
