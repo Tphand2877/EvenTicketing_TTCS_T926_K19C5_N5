@@ -33,6 +33,13 @@ const createSeatHoldService = (repository = SeatHold) => ({
       if (!showtime) throw new SeatHoldError('SHOWTIME_NOT_FOUND', 'Không tìm thấy suất diễn.');
       // Read the database clock AFTER acquiring the lock, including time spent waiting.
       const asOf = await repository.currentTime(transaction, now);
+      if (repository.hasSeatSpecificHolds
+        && await repository.hasSeatSpecificHolds(showtimeId, transaction)) {
+        throw new SeatHoldError(
+          'SEAT_SPECIFIC_HOLDS_ACTIVE',
+          'Suất diễn đang dùng giữ chỗ theo mã ghế. Vui lòng chọn ghế trên sơ đồ.'
+        );
+      }
       const existing = await repository.findActiveUserHold(transaction, showtimeId, userId);
       const held = await repository.heldQuantity({
         showtimeId, excludeHoldId: existing?.id, now: asOf, transaction,

@@ -41,7 +41,7 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
       CREATE TABLE fixture_tickets (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL, status text NOT NULL);
       CREATE INDEX tickets_showtime_seat ON fixture_tickets(showtime_id, seat_id);
-      CREATE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
+      CREATE OR REPLACE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
       CREATE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
       CREATE INDEX showtime_sale_start ON showtimes(status, starts_at, id);
     `);
