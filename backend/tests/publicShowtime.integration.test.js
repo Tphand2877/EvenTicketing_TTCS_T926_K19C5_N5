@@ -1,4 +1,4 @@
-/** T-11/T-15 and future per-seat holds/tickets are test fixtures, not production migrations. */
+/** T-15 sale status, S-15 prices and future per-seat holds/tickets are test fixtures; T-11 tables use the real migration. */
 process.env.JWT_SECRET = 'public-query-integration-test-only';
 const crypto = require('crypto');
 const path = require('path');
@@ -25,15 +25,9 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
     await mockDatabase.raw(`
       CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
       ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'draft';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer, notes text);
-      CREATE INDEX category_showtime ON seat_categories(showtime_id);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
+      -- seats/seat_categories now come from the real T-11 migration (007).
+      -- Only the later S-15 price column (and an internal field that must never leak) are simulated.
+      ALTER TABLE seat_categories ADD COLUMN price integer, ADD COLUMN notes text;
       CREATE TABLE fixture_holds (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL, expires_at timestamptz NOT NULL, user_id integer);
