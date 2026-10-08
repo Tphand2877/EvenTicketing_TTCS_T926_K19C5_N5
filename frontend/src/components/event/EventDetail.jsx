@@ -21,7 +21,18 @@ export default function EventDetail({ event, showtimes }) {
   const location = useLocation()
   const { color, emoji } = getCategoryStyle(event.category)
 
-  const [selectedId, setSelectedId]         = useState(null)
+  const initialShowtimeId = (() => {
+    const params = new URLSearchParams(location.search)
+    const stId = params.get('showtimeId')
+    if (stId && /^\d+$/.test(stId)) {
+      const parsed = Number(stId)
+      return showtimes.some((s) => s.id === parsed) ? parsed : null
+    }
+    return null
+  })()
+
+  const [selectedId, setSelectedId]         = useState(initialShowtimeId)
+
   const [quantity, setQuantity]             = useState(1)
   const [seats, setSeats]                   = useState([])
   const [availability, setAvailability]     = useState(null)
