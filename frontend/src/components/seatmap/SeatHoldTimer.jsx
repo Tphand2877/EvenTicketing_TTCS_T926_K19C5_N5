@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { getServerNow } from '../../services/apiClient'
 
-const getRemainingMs = (expiresAt) => Math.max(new Date(expiresAt).getTime() - Date.now(), 0)
+// Tính theo giờ server (không tin đồng hồ máy người dùng) – SCRUM-172
+const getRemainingMs = (expiresAt) => Math.max(new Date(expiresAt).getTime() - getServerNow(), 0)
 
 /**
- * Đồng hồ đếm ngược thời hạn giữ chỗ (SCRUM-84)
+ * Đồng hồ đếm ngược thời hạn giữ chỗ (SCRUM-84, SCRUM-172)
  *
  * Mỗi tick tính lại từ `expiresAt` thay vì trừ dần 1 giây, vì trình duyệt
  * làm chậm setInterval khi tab bị ẩn -> trừ dần sẽ lệch so với server.
+ * Thời điểm hiện tại lấy từ giờ server (getServerNow) nên chỉnh sai giờ máy
+ * người dùng cũng không làm lệch đồng hồ.
  *
  * @param {{ expiresAt: string, onExpire?: () => void }} props
  */

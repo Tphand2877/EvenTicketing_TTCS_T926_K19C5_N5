@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import SeatHoldTimer from '../components/seatmap/SeatHoldTimer'
+import { getServerNow } from '../services/apiClient'
 import { formatDateTime, formatPrice } from '../components/event/eventFormat'
 import { useAuth } from '../context/AuthContext'
 
@@ -43,8 +44,8 @@ export default function CheckoutPage() {
     payment: '',
   })
   const [errors, setErrors]       = useState({})
-  const [expired, setExpired]     = useState(() => !!hold && new Date(hold.expiresAt) <= new Date())
-  const [submitted, setSubmitted] = useState(false)
+const [expired, setExpired] = useState(() => !!hold && new Date(hold.expiresAt).getTime() <= getServerNow()) 
+ const [submitted, setSubmitted] = useState(false)
 
   const setField = (e) => {
     const { name, value } = e.target
