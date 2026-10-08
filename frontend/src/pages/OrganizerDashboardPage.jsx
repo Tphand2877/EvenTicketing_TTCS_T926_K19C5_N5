@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import { CATEGORIES, formatDateTime, formatPrice, getErrorMessage } from '../components/event/eventFormat'
+import ShowtimeSalesPanel from '../components/event/ShowtimeSalesPanel'
 import {
   createEvent,
   createShowtime,
@@ -16,6 +17,7 @@ const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
 
 /**
  * SCRUM-80 – Organizer quản lý sự kiện & suất diễn
+ * S-05 / S-07 – Nạp sơ đồ ghế, mở bán / đóng bán từng suất (ShowtimeSalesPanel)
  */
 export default function OrganizerDashboardPage() {
   const [events, setEvents]   = useState([])
@@ -27,6 +29,7 @@ export default function OrganizerDashboardPage() {
   const [savingEvent, setSavingEvent]   = useState(false)
   const [showtimeFor, setShowtimeFor]   = useState(null) // event id đang mở form suất diễn
   const [showtimeForm, setShowtimeForm] = useState(EMPTY_SHOWTIME)
+  const [panelRefresh, setPanelRefresh] = useState(0) // tải lại danh sách suất sau khi thêm suất
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -82,11 +85,12 @@ export default function OrganizerDashboardPage() {
         price: Number(showtimeForm.price),
         capacity: Number(showtimeForm.capacity),
       }),
-      'Đã thêm suất diễn.'
+      'Đã thêm suất diễn ở trạng thái nháp. Hãy nạp sơ đồ ghế rồi bấm “Mở bán”.'
     )
     if (ok) {
       setShowtimeForm(EMPTY_SHOWTIME)
       setShowtimeFor(null)
+      setPanelRefresh((n) => n + 1)
     }
   }
 
@@ -206,6 +210,11 @@ export default function OrganizerDashboardPage() {
                     </div>
                   </form>
                 )}
+
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-1">Suất diễn</h4>
+                  <ShowtimeSalesPanel eventId={event.id} refreshKey={panelRefresh} onChanged={loadEvents} />
+                </div>
               </div>
             ))}
           </div>

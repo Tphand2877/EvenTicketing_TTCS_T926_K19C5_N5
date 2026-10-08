@@ -9,7 +9,7 @@ const availability = (now = NOW) => service.getAvailability({ showtimeId: 1, cap
 
 beforeEach(() => {
   delete process.env.SEAT_HOLD_TTL_SECONDS;
-  repository = createMemoryRepository([{ id: 1, capacity: 3 }, { id: 2, capacity: 3 }]);
+  repository = createMemoryRepository([{ id: 1, capacity: 3, status: 'on_sale' }, { id: 2, capacity: 3, status: 'on_sale' }]);
   service = createSeatHoldService(repository);
 });
 afterEach(() => delete process.env.SEAT_HOLD_TTL_SECONDS);
