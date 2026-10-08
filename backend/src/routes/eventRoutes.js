@@ -1,6 +1,7 @@
 /**
  * SCRUM-80 - Events & Showtimes routes
  * SCRUM-84 (spike) - Seat hold routes
+ * S-05 / T-12 - Seat map import
  *
  * Dùng createSecureRouter: route nào không khai báo policy sẽ bị từ chối (deny by default).
  */
@@ -19,11 +20,13 @@ const {
   getAvailability,
   holdSeats,
   releaseHold,
+  importSeatMap,
 } = require('../controllers/eventController');
 const {
   validateEvent,
   validateShowtime,
   validateSeatHold,
+  validateSeatMap,
 } = require('../middleware/validateMiddleware');
 
 const MANAGERS = { roles: ['organizer', 'admin'] };
@@ -50,6 +53,7 @@ showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
 showtimeRouter.get('/:id', { public: true }, getPublicShowtime);
 showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
 showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);
+showtimeRouter.put('/:id/seat-map', MANAGERS, validateSeatMap, importSeatMap);
 showtimeRouter.patch('/:id', MANAGERS, validateShowtime({ partial: true }), updateShowtime);
 showtimeRouter.delete('/:id', MANAGERS, deleteShowtime);
 

@@ -5,11 +5,14 @@
  *    (organizer chỉ quản lý event của chính mình, admin quản lý tất cả)
  *
  * SCRUM-84 (spike) - Giữ chỗ có thời hạn cho một suất diễn
+ *
+ * S-05 / T-12 - Organizer nạp sơ đồ ghế từ tệp JSON
  */
 
 const Event = require('../models/Event');
 const Showtime = require('../models/Showtime');
 const seatHoldService = require('../services/seatHoldService');
+const seatMapService = require('../services/seatMapService');
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
@@ -314,7 +317,36 @@ const releaseHold = async (req, res, next) => {
   }
 };
 
+// ─── S-05 / T-12: Seat map import ────────────────────────────────────────────
+
+/**
+ * PUT /api/showtimes/:id/seat-map  { seats: [{ row, number, category }] }
+ * Thay toàn bộ sơ đồ ghế của suất diễn (organizer sở hữu event hoặc admin).
+ */
+const importSeatMap = async (req, res, next) => {
+  try {
+    const showtime = await loadManageableShowtime(parseId(req.params.id), req, res);
+    if (!showtime) return undefined;
+
+    const result = await seatMapService.importSeatMap({ showtimeId: showtime.id, seats: req.seatMap });
+    return res.json({
+      success: true,
+      message: result.replacedSeatCount > 0
+        ? `Đã thay sơ đồ cũ (${result.replacedSeatCount} ghế) bằng ${result.seatCount} ghế mới.`
+        : `Đã nạp ${result.seatCount} ghế.`,
+      data: result,
+    });
+  } catch (err) {
+    if (err instanceof seatMapService.SeatMapError) {
+      const status = err.code === 'SHOWTIME_NOT_FOUND' ? 404 : 409;
+      return res.status(status).json({ success: false, code: err.code, message: err.message });
+    }
+    return next(err);
+  }
+};
+
 module.exports = {
+  importSeatMap,
   listEvents,
   getEvent,
   listMyEvents,

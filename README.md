@@ -297,6 +297,7 @@ npm run build
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
 - `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+- `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
@@ -383,7 +384,48 @@ Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, 
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
-## 👥 9. Đội ngũ phát triển
+## 9. S-05: Nạp sơ đồ ghế từ tệp JSON (T-11, T-12)
+
+**T-11:** migration `007` tạo bảng `seat_categories` (hạng ghế theo từng suất diễn,
+tên không trùng trong một suất) và `seats` (`row_label`, `seat_number`, `category_id`;
+không trùng hàng + số trong một suất). Khoá ngoại ghép bảo đảm hạng ghế của một ghế
+luôn thuộc cùng suất diễn. Giá theo hạng do S-15 bổ sung sau.
+
+**T-12:** `PUT /api/showtimes/:id/seat-map` (organizer sở hữu sự kiện hoặc `admin`):
+
+```json
+{ "seats": [
+  { "row": "A", "number": 1, "category": "VIP" },
+  { "row": "A", "number": 2, "category": "VIP" },
+  { "row": "B", "number": 1, "category": "Thường" }
+] }
+```
+
+- Toàn bộ việc nạp chạy trong **một giao dịch** và khoá dòng suất diễn (cùng khoá với API giữ chỗ).
+- Hạng ghế chưa có được tạo theo tên trong tệp; hạng đã có được dùng lại.
+- Suất đã có sơ đồ nhưng chưa bán/giữ: sơ đồ cũ bị thay toàn bộ.
+- Suất đang có người giữ chỗ, đang chờ thanh toán hoặc đã bán: trả **409** `SEAT_MAP_LOCKED` kèm lý do.
+- Lỗi ở bất kỳ ghế nào: rollback, không lưu ghế nào.
+- Sức chứa (`capacity`) của suất được cập nhật bằng số ghế trong sơ đồ.
+- Tệp được kiểm tra trước khi ghi: tối đa 10.000 ghế, 50 hạng; `row` 1–10 ký tự,
+  `number` 1–9999, `category` 1–100 ký tự, không trùng ghế. Lỗi trả **400** kèm vị trí ghế (tối đa 10 lỗi).
+  Giới hạn body JSON của API là 1 MB.
+
+Ví dụ: `docs/seat-map-sample.json`
+
+```bash
+curl -X PUT http://localhost:3000/api/showtimes/1/seat-map \
+  -H "Authorization: Bearer <token organizer>" -H "Content-Type: application/json" \
+  --data-binary @docs/seat-map-sample.json
+```
+
+Kiểm thử: `tests/seatMap.test.js` (validate, phân quyền) và `tests/seatMap.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SEAT_MAP_DB_TESTS=1`): đủ 4 AC, gồm lỗi giả lập ở ghế thứ 1.500,
+và tệp 2.000 ghế dưới 5 giây.
+
+---
+
+## 👥 10. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -393,5 +435,5 @@ không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
 and the single-query seat-state API are documented in
 [docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
-Configure `REDIS_URL` using `.env.example`. T-11/T-15 and per-seat hold/ticket read
+Configure `REDIS_URL` using `.env.example`. T-11 tables now exist (migration 007); T-15 and per-seat hold/ticket read
 adapters must be connected before these new endpoints are available on staging.

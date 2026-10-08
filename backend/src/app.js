@@ -11,7 +11,8 @@ const app = express();
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
-app.use(express.json());
+// 1mb: đủ cho tệp sơ đồ ghế tối đa 10.000 ghế (S-05); mặc định 100kb chỉ ~2.000 ghế
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
