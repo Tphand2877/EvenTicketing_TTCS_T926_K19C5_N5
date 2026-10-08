@@ -78,7 +78,6 @@ export const releaseSeat = async (holdId, seat) => {
   return data?.data?.hold ?? null
 }
 
-
 // ── Public showtimes – SCRUM-162 (T-17, T-18) ───────────────────────────────
 
 /**
