@@ -349,6 +349,30 @@ const importSeatMap = async (req, res, next) => {
   }
 };
 
+
+/**
+ * POST /api/showtimes/:id/seat-map/validate  { seats: [{ row, number, category }] }
+ * Kiểm tra cấu trúc tệp và trả về kết quả xem trước mà không ghi vào CSDL (T-13 / T-14).
+ */
+const validateSeatMapPreview = async (req, res, next) => {
+  try {
+    const showtime = await loadManageableShowtime(parseId(req.params.id), req, res);
+    if (!showtime) return undefined;
+
+    return res.json({
+      success: true,
+      message: 'Sơ đồ ghế hợp lệ.',
+      data: {
+        isValid: true,
+        summary: req.seatMapSummary,
+        seatCount: req.seatMap.length,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 // ─── S-07 / T-15: Mở bán / đóng bán ──────────────────────────────────────────
 
 /**
@@ -410,11 +434,12 @@ const getStatusLog = async (req, res, next) => {
 };
 
 module.exports = {
+  importSeatMap,
+  validateSeatMapPreview,
   listEventShowtimes,
   openSales,
   closeSales,
   getStatusLog,
-  importSeatMap,
   listEvents,
   getEvent,
   listMyEvents,
@@ -428,3 +453,4 @@ module.exports = {
   holdSeats,
   releaseHold,
 };
+

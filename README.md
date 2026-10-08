@@ -411,8 +411,8 @@ luôn thuộc cùng suất diễn. Giá theo hạng do S-15 bổ sung sau.
 - Lỗi ở bất kỳ ghế nào: rollback, không lưu ghế nào.
 - Sức chứa (`capacity`) của suất được cập nhật bằng số ghế trong sơ đồ.
 - Tệp được kiểm tra trước khi ghi: tối đa 10.000 ghế, 50 hạng; `row` 1–10 ký tự,
-  `number` 1–9999, `category` 1–100 ký tự, không trùng ghế. Lỗi trả **400** kèm vị trí ghế (tối đa 10 lỗi).
-  Giới hạn body JSON của API là 1 MB.
+  `number` 1–9999, `category` 1–100 ký tự, không trùng ghế.
+  Giới hạn kích thước tệp là 5 MB (S-06 NFR).
 
 Ví dụ: `docs/seat-map-sample.json`
 
@@ -428,7 +428,31 @@ và tệp 2.000 ghế dưới 5 giây.
 
 ---
 
-## 10. S-07: Mở bán / đóng bán suất diễn (T-15, T-16)
+## 10. S-06: Từ chối tệp sơ đồ sai và chỉ rõ vị trí (T-13, T-14)
+
+### T-13 – Bộ kiểm tra cấu trúc tệp trả về đủ danh sách lỗi kèm vị trí
+- **AC1:** Ghế thiếu trường bắt buộc (`row`, `number`, `category`) -> từ chối toàn bộ tệp và chỉ rõ ghế nào thiếu trường nào (vd: `Ghế #2: thiếu trường bắt buộc "row" (chuỗi 1–10 ký tự)`).
+- **AC2:** Ghế trùng hàng và số -> từ chối và chỉ ra cả cặp trùng (vd: `Ghế #2: trùng ghế A1 với ghế #1`).
+- **AC3:** Tệp có nhiều lỗi -> trả đủ danh sách toàn bộ lỗi trong một lần (không bị giới hạn 10 lỗi) để ban tổ chức sửa một lần rồi nạp lại.
+- **AC4:** Tệp không phải JSON hợp lệ -> trả HTTP 400 kèm chi tiết vị trí ký tự, dòng và cột (vd: `Định dạng JSON không hợp lệ tại vị trí ký tự 12 (position 12, dòng 1, cột 13)`), không hiện lỗi 500.
+- **NFR:** Kiểm tra cấu trúc chạy trước mọi giao dịch ghi; giới hạn kích thước tệp 5 MB (HTTP 413 nếu vượt quá).
+- **API kiểm tra xem trước:** `POST /api/showtimes/:id/seat-map/validate` (organizer hoặc admin) trả về kết quả kiểm tra và bản tóm tắt lưới ghế mà không ghi vào CSDL.
+- **Unit test:** `tests/seatMapValidator.test.js` và `tests/seatMap.test.js`.
+
+### T-14 – Màn hình tải lên hiện lỗi và xem trước lưới ghế
+- Tích hợp tại giao diện Organizer Dashboard (`/organizer`): bấm **"Suất diễn"** -> **"Sơ đồ ghế"** trên từng suất diễn.
+- Kéo thả hoặc chọn tệp `.json` (kiểm tra tức thì kích thước <= 5 MB và cú pháp JSON).
+- Nếu tệp sai: hiển thị hộp thoại báo lỗi chi tiết, gắn nhãn từng ghế bị lỗi, cho phép tìm kiếm/lọc lỗi. Toàn bộ tệp bị từ chối và nút xác nhận nạp bị vô hiệu hoá.
+- **AC5:** Nếu tệp hợp lệ: hiển thị xem trước lưới ghế trực quan (Seat Map Canvas Grid) với:
+  - Đúng số hàng ghế (xếp theo nhãn hàng A, B, C...).
+  - Đúng số ghế trong từng hàng và số thứ tự ghế.
+  - Màu sắc phân biệt theo từng hạng vé (VIP, Thường, Ban công,...) kèm bảng chú thích (Legend) số lượng và phần trăm.
+  - Thống kê tổng số ghế, số hàng, số hạng.
+- Nút **"Xác nhận nạp sơ đồ"** gửi yêu cầu `PUT /api/showtimes/:id/seat-map` để ghi vào CSDL trong một giao dịch an toàn.
+
+---
+
+## 11. S-07: Mở bán / đóng bán suất diễn (T-15, T-16)
 
 **T-15:** migration `008` thêm cột `showtimes.status` (enum `showtime_sale_status`) và bảng
 `showtime_status_logs`. Suất **tạo mới mặc định là nháp**; suất có sẵn trước S-07 được chuyển thành đang bán
@@ -457,7 +481,7 @@ giữa lúc 20 người đang giữ chỗ.
 
 ---
 
-## 👥 11. Đội ngũ phát triển
+## 👥 12. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)

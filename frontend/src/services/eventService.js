@@ -40,6 +40,11 @@ export const deleteEvent = async (id) => {
   await apiClient.delete(`/events/${id}`)
 }
 
+export const getEventShowtimes = async (eventId) => {
+  const { data } = await apiClient.get(`/events/${eventId}/showtimes`)
+  return data.data.showtimes
+}
+
 export const createShowtime = async (eventId, showtime) => {
   const { data } = await apiClient.post(`/events/${eventId}/showtimes`, showtime)
   return data.data.showtime
@@ -92,17 +97,20 @@ export const getPublicShowtime = async (id) => {
   return data.data
 }
 
-// ── Organizer: sơ đồ ghế (S-05) và mở bán / đóng bán (S-07) ────────────────────
+// ── Organizer: sơ đồ ghế (S-05, S-06) và mở bán / đóng bán (S-07) ──────────────
 
-/** Mọi suất của một sự kiện (kể cả nháp) kèm seat_count, category_count */
-export const getEventShowtimes = async (eventId) => {
-  const { data } = await apiClient.get(`/events/${eventId}/showtimes`)
-  return data.data.showtimes
+
+/** Nạp/thay sơ đồ ghế: chấp nhận seats mảng hoặc { seats } */
+export const importSeatMap = async (showtimeId, payload) => {
+  const seats = Array.isArray(payload) ? payload : payload?.seats
+  const { data } = await apiClient.put(`/showtimes/${showtimeId}/seat-map`, { seats })
+  return data
 }
 
-/** Nạp/thay sơ đồ ghế: seats = [{ row, number, category }] */
-export const importSeatMap = async (showtimeId, seats) => {
-  const { data } = await apiClient.put(`/showtimes/${showtimeId}/seat-map`, { seats })
+/** Kiểm tra trước sơ đồ ghế (T-13 / T-14): chấp nhận seats mảng hoặc { seats } */
+export const validateSeatMap = async (showtimeId, payload) => {
+  const seats = Array.isArray(payload) ? payload : payload?.seats
+  const { data } = await apiClient.post(`/showtimes/${showtimeId}/seat-map/validate`, { seats })
   return data
 }
 
@@ -115,4 +123,5 @@ export const closeSales = async (showtimeId) => {
   const { data } = await apiClient.post(`/showtimes/${showtimeId}/close-sales`)
   return data
 }
+
 

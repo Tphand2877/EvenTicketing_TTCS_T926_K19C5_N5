@@ -11,13 +11,14 @@ import {
   getMyEvents,
   updateEvent,
 } from '../services/eventService'
+import SeatMapUploadModal from '../components/seatmap/SeatMapUploadModal'
 
 const EMPTY_EVENT = { title: '', venue: '', category: CATEGORIES[0], description: '', image_url: '', published: true }
 const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
 
 /**
  * SCRUM-80 – Organizer quản lý sự kiện & suất diễn
- * S-05 / S-07 – Nạp sơ đồ ghế, mở bán / đóng bán từng suất (ShowtimeSalesPanel)
+ * S-05 / S-06 / S-07 – Nạp & kiểm tra sơ đồ ghế trực quan, mở bán / đóng bán từng suất
  */
 export default function OrganizerDashboardPage() {
   const [events, setEvents]   = useState([])
@@ -30,6 +31,9 @@ export default function OrganizerDashboardPage() {
   const [showtimeFor, setShowtimeFor]   = useState(null) // event id đang mở form suất diễn
   const [showtimeForm, setShowtimeForm] = useState(EMPTY_SHOWTIME)
   const [panelRefresh, setPanelRefresh] = useState(0) // tải lại danh sách suất sau khi thêm suất
+
+  // S-06 / T-14: Modal tải lên và xem trước sơ đồ ghế trực quan
+  const [uploadSeatMapFor, setUploadSeatMapFor] = useState(null)
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -59,6 +63,13 @@ export default function OrganizerDashboardPage() {
       setError(getErrorMessage(err))
       return false
     }
+  }
+
+  const handleSeatMapSuccess = async (res) => {
+    setNotice(res?.message || 'Nạp sơ đồ ghế thành công!')
+    setUploadSeatMapFor(null)
+    setPanelRefresh((n) => n + 1)
+    await loadEvents()
   }
 
   const handleCreateEvent = async (e) => {
@@ -213,12 +224,27 @@ export default function OrganizerDashboardPage() {
 
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <h4 className="text-sm font-semibold text-gray-700 mb-1">Suất diễn</h4>
-                  <ShowtimeSalesPanel eventId={event.id} refreshKey={panelRefresh} onChanged={loadEvents} />
+                  <ShowtimeSalesPanel
+                    eventId={event.id}
+                    refreshKey={panelRefresh}
+                    onChanged={loadEvents}
+                    onUploadSeatMap={(st) => setUploadSeatMapFor({ showtime: st, eventTitle: event.title })}
+                  />
                 </div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* Modal tải lên & xem trước sơ đồ ghế (S-06 / T-14) */}
+        {uploadSeatMapFor && (
+          <SeatMapUploadModal
+            showtime={uploadSeatMapFor.showtime}
+            eventTitle={uploadSeatMapFor.eventTitle}
+            onClose={() => setUploadSeatMapFor(null)}
+            onSuccess={handleSeatMapSuccess}
+          />
+        )}
       </main>
       <Footer />
     </div>

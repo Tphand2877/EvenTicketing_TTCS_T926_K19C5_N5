@@ -21,7 +21,7 @@ const describeError = (err, fallback) => {
  * S-07 / T-16 - Organizer quản lý suất diễn của một sự kiện:
  * nạp sơ đồ ghế từ tệp JSON (S-05), mở bán / đóng bán (S-07).
  */
-export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged }) {
+export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onUploadSeatMap }) {
   const [showtimes, setShowtimes] = useState([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -117,10 +117,20 @@ export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged }) {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => fileInputs.current[s.id]?.click()}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                  onClick={() => {
+                    if (onUploadSeatMap) {
+                      onUploadSeatMap(s)
+                    } else {
+                      fileInputs.current[s.id]?.click()
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-pink-200 text-pink-700 hover:bg-pink-50 disabled:opacity-50 font-medium flex items-center gap-1.5"
+                  title="Tải lên, kiểm tra lỗi và xem trước sơ đồ ghế"
                 >
-                  {s.seat_count > 0 ? 'Thay sơ đồ ghế (JSON)' : 'Nạp sơ đồ ghế (JSON)'}
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {s.seat_count > 0 ? 'Sơ đồ ghế (Xem / Đổi)' : 'Nạp sơ đồ ghế'}
                 </button>
                 {s.status === 'on_sale' ? (
                   <button
