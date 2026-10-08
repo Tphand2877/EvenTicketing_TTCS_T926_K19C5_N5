@@ -297,14 +297,200 @@ npm run build
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
 - `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+- `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
+- `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
+- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
+- `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
 
 ---
 
-## 👥 8. Đội ngũ phát triển
+## 8. S-12 / SCRUM-176: Nhả giữ chỗ hết hạn (T-27, T-28)
+
+Giữ chỗ được lưu trong bảng PostgreSQL `seat_holds` (migration `006`), thay cho
+store trong bộ nhớ của spike SCRUM-84. API hiện tại vẫn giữ **số lượng chỗ của
+một suất diễn**, chưa có mã ghế riêng; dữ liệu và API theo từng ghế của S-10/T-22
+cần dùng cùng quy tắc trạng thái và khóa khi được tích hợp.
+
+- `active` và `expires_at > thời gian DB`: trừ vào số chỗ trống.
+- `active` đã hết hạn: truy vấn chỗ trống bỏ qua ngay, dù job chưa chạy.
+- Job đổi giữ chỗ quá hạn từ `active` sang `cancelled`, lưu `cancelled_at`;
+  chạy lại không đổi thời điểm huỷ hoặc ghi nhận huỷ thêm lần nữa.
+- `pending_payment` và `confirmed`: luôn trừ vào sức chứa, job hết hạn giữ chỗ
+  và API huỷ giữ chỗ không được nhả chúng.
+
+`npm start`, `npm run dev` và `node src/app.js` đều chạy job ngay khi khởi động,
+dọn toàn bộ tồn đọng không giới hạn tuổi dữ liệu, rồi lặp mỗi 30 giây. Một tiến
+trình không chạy chồng job; nhiều tiến trình dùng câu UPDATE có điều kiện để
+không huỷ hai lần. Khi DB lỗi, job ghi thông báo chung và thử lại ở lượt kế tiếp.
+Tắt tiến trình chờ job hoàn tất rồi đóng kết nối DB.
+
+Truy vấn chỗ trống chỉ đọc dữ liệu. API tạo/thay giữ chỗ hiện có được nối với
+store PostgreSQL và khóa hàng `showtimes` bằng `FOR UPDATE`, lấy thời gian DB
+sau khi giành khóa và dùng sức chứa từ DB. Đây là bảo toàn hành vi giữ chỗ
+hiện có khi chuyển store để phục vụ S-12; không thêm API hoặc luồng đặt chỗ mới.
+
+### Cấu hình và cập nhật schema
+
+Chạy `cd backend && npm run migrate` trước khi khởi động phiên bản mới.
+Compose phát triển và staging chạy migration trước server.
+Giữ chỗ của spike chỉ có trong bộ nhớ tiến trình cũ và không thể backfill:
+khi triển khai lần đầu, dừng nhận giữ chỗ mới và chờ TTL của các giữ chỗ cũ
+hết trước khi thay phiên bản.
+
+| Biến môi trường | Mặc định | Giá trị hợp lệ |
+| --- | --- | --- |
+| `SEAT_HOLD_TTL_SECONDS` | `600` | Số nguyên dương (giữ quy tắc TTL hiện có) |
+| `SEAT_HOLD_CLEANUP_INTERVAL_MS` | `30000` | Số nguyên 100–2147483647 mili giây |
+
+Giá trị không hợp lệ dùng mặc định. Với Compose, khai báo trong `.env` ở gốc
+repository; chạy trực tiếp thì khai báo trong `backend/.env`.
+
+### Phạm vi S-12 và dữ liệu đã chuyển sang đơn hàng
+
+S-12 gồm **T-27 / SCRUM-177** (job dọn giữ chỗ hết hạn) và **T-28 / SCRUM-178**
+(truy vấn chỗ trống theo thời điểm hết hạn). Bảng giữ chỗ bền vững cần cho job
+khôi phục sau restart; API giữ/hủy hiện có tiếp tục dùng cùng dữ liệu này.
+
+Job chỉ huỷ hàng `status = 'active'`, `order_id IS NULL`, `expires_at <= thời gian DB`.
+Nếu dữ liệu do luồng đơn hàng tạo đã có `status = 'pending_payment'` hoặc
+`confirmed`, job không đụng tới hàng đó và truy vấn vẫn tính chỗ là đang bận.
+Kiểm thử AC4 nạp sẵn các hàng này làm điều kiện đầu vào. S-12 không triển khai
+chuyển giữ chỗ thành đơn hàng, tạo đơn, thanh toán hoặc webhook.
+
+Các endpoint hiện có không đổi:
+`GET /api/showtimes/:id/availability`, `POST /api/showtimes/:id/holds`,
+`DELETE /api/showtimes/holds/:holdId`. Các hàm service nay là bất đồng bộ.
+Lỗi truy vấn/job không in thông tin người dùng, mã đơn hoặc tham số SQL ra log.
+
+### Kiểm thử và nghiệm thu
+
+```bash
+cd backend
+npm test
+npm run lint
+npm run build
+# Cần PostgreSQL thật, cấu hình DB_* trỏ tới database kiểm thử riêng:
+npm run test:integration
+```
+
+Test tích hợp tạo schema tạm riêng rồi xoá schema đó; không dùng dữ liệu người
+dùng. GitHub Actions đặt `RUN_SEAT_HOLD_DB_TESTS=1` và chạy trên PostgreSQL 16;
+DB không truy cập được làm test thất bại, không bỏ qua lỗi. Kiểm thử bao gồm
+đúng mốc hết hạn, startup dọn 150 giữ chỗ tồn đọng trong tiến trình mới, hai
+backend dùng chung DB, 20 người cùng giữ chỗ cuối, các job dọn đồng thời và
+bảo vệ dữ liệu đã thuộc đơn hàng trước các job dọn đồng thời.
+
+Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, CI xanh,
+chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
+không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
+
+## 9. S-05: Nạp sơ đồ ghế từ tệp JSON (T-11, T-12)
+
+**T-11:** migration `007` tạo bảng `seat_categories` (hạng ghế theo từng suất diễn,
+tên không trùng trong một suất) và `seats` (`row_label`, `seat_number`, `category_id`;
+không trùng hàng + số trong một suất). Khoá ngoại ghép bảo đảm hạng ghế của một ghế
+luôn thuộc cùng suất diễn. Giá theo hạng do S-15 bổ sung sau.
+
+**T-12:** `PUT /api/showtimes/:id/seat-map` (organizer sở hữu sự kiện hoặc `admin`):
+
+```json
+{ "seats": [
+  { "row": "A", "number": 1, "category": "VIP" },
+  { "row": "A", "number": 2, "category": "VIP" },
+  { "row": "B", "number": 1, "category": "Thường" }
+] }
+```
+
+- Toàn bộ việc nạp chạy trong **một giao dịch** và khoá dòng suất diễn (cùng khoá với API giữ chỗ).
+- Hạng ghế chưa có được tạo theo tên trong tệp; hạng đã có được dùng lại.
+- Suất đã có sơ đồ nhưng chưa bán/giữ: sơ đồ cũ bị thay toàn bộ.
+- Suất đang có người giữ chỗ, đang chờ thanh toán hoặc đã bán: trả **409** `SEAT_MAP_LOCKED` kèm lý do.
+- Lỗi ở bất kỳ ghế nào: rollback, không lưu ghế nào.
+- Sức chứa (`capacity`) của suất được cập nhật bằng số ghế trong sơ đồ.
+- Tệp được kiểm tra trước khi ghi: tối đa 10.000 ghế, 50 hạng; `row` 1–10 ký tự,
+  `number` 1–9999, `category` 1–100 ký tự, không trùng ghế. Lỗi trả **400** kèm vị trí ghế (tối đa 10 lỗi).
+  Giới hạn body JSON của API là 1 MB.
+
+Ví dụ: `docs/seat-map-sample.json`
+
+```bash
+curl -X PUT http://localhost:3000/api/showtimes/1/seat-map \
+  -H "Authorization: Bearer <token organizer>" -H "Content-Type: application/json" \
+  --data-binary @docs/seat-map-sample.json
+```
+
+Kiểm thử: `tests/seatMap.test.js` (validate, phân quyền) và `tests/seatMap.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SEAT_MAP_DB_TESTS=1`): đủ 4 AC, gồm lỗi giả lập ở ghế thứ 1.500,
+và tệp 2.000 ghế dưới 5 giây.
+
+---
+
+## 10. S-07: Mở bán / đóng bán suất diễn (T-15, T-16)
+
+**T-15:** migration `008` thêm cột `showtimes.status` (enum `showtime_sale_status`) và bảng
+`showtime_status_logs`. Suất **tạo mới mặc định là nháp**; suất có sẵn trước S-07 được chuyển thành đang bán
+để giữ hành vi cũ.
+
+| Trạng thái | Người mua thấy? | Giữ chỗ mới? | Chuyển sang |
+|---|---|---|---|
+| `draft` (nháp) | Không | Không | `on_sale` (mở bán) |
+| `on_sale` (đang bán) | Có | Có | `closed` (đóng bán) |
+| `closed` (đã đóng bán) | Có, ghi "đã đóng bán" | Không | `on_sale` (mở bán lại) |
+
+- Mở bán bị chặn kèm lý do (409) khi: chưa có sơ đồ ghế (`NO_SEAT_MAP`), sự kiện chưa công khai
+  (`EVENT_NOT_PUBLISHED`), suất đã bắt đầu (`SHOWTIME_STARTED`), hoặc chuyển sai luật
+  (`INVALID_TRANSITION`, `ALREADY_IN_STATUS`).
+- Đóng bán chỉ chặn **giữ chỗ mới**; lượt giữ và đơn đang chờ vẫn huỷ, hết hạn, được job dọn như bình thường.
+  Việc kiểm tra trạng thái nằm trong khoá dòng suất diễn của API giữ chỗ, nên không lượt giữ nào lọt qua sau khi đã đóng.
+- Mỗi lần đổi trạng thái ghi `showtime_status_logs` (trạng thái cũ, mới, id người thao tác, thời điểm). Nhật ký chỉ lưu id, không lưu email.
+
+**T-16:** trang `/organizer` có khu "Suất diễn" dưới mỗi sự kiện: trạng thái, số ghế, nút nạp sơ đồ ghế (JSON),
+nút **Mở bán** / **Đóng bán** / **Mở bán lại**; lý do bị chặn hiện ngay dưới suất đó.
+Script `scripts/seed-demo-events.js` tạo suất demo kèm sơ đồ ghế và đã mở bán.
+
+Kiểm thử: `tests/showtimeSale.test.js` (phân quyền, mã lỗi) và `tests/showtimeSale.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SHOWTIME_SALE_DB_TESTS=1`): 4 AC, nhật ký, migration dữ liệu cũ, và đóng bán
+giữa lúc 20 người đang giữ chỗ.
+
+---
+
+## 👥 11. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
 * **GitHub Repository:** [EvenTicketing_TTCS_T926_K19C5_N5](https://github.com/Tphand2877/EvenTicketing_TTCS_T926_K19C5_N5)
+# Minh Quang: public queries (T-17, T-19)
+
+Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
+and the single-query seat-state API are documented in
+[docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
+Configure `REDIS_URL` using `.env.example`. T-11 (migration 007) and T-15 (migration 008) now exist; per-seat hold/ticket read
+adapters must be connected before these new endpoints are available on staging.
+
+## 🎟️ Sơ đồ ghế còn trống (SCRUM-165 / S-09)
+
+* **User Story:** Là người mua vé tôi muốn nhìn sơ đồ ghế và biết ghế nào còn trống để chọn được chỗ ngồi mình muốn.
+* **Sub-tasks:**
+  - **T-19**: Truy vấn trạng thái ghế theo suất diễn trong một lần gọi duy nhất (`GET /api/showtimes/:id/seats`), trả về đầy đủ trạng thái của toàn bộ ghế (`available`, `held`, `sold`), không phát sinh N+1 truy vấn.
+  - **T-20**: Vẽ sơ đồ ghế trực quan trên trình duyệt (`SeatMapCanvas`, `SeatLegend`):
+    - 3 trạng thái ghế phân biệt rõ ràng bằng cả màu sắc và ký hiệu (○: Trống / xanh lá; ⏳: Đang có người giữ / vàng hổ phách; ✕: Đã bán / xám; ✓: Đang chọn / hồng tím).
+    - Hỗ trợ phóng to thu nhỏ mượt mà trên điện thoại (+, -, 100%, phạm vi 50% - 220%) và bấm trúng ghế chính xác (AC5).
+    - Suất diễn chưa nạp sơ đồ ghế hiển thị thông báo *"Suất diễn chưa mở bán"*, không render lưới rỗng (AC3).
+    - Tải lại trang phản ánh ngay trạng thái ghế vừa bị người khác giữ chuyển sang "Đang có người giữ" (AC2).
+  - **T-21**: Tệp mẫu 2000 ghế (`sample-seat-map-2000.json`) và bộ đo thời gian hiển thị: kiểm thử benchmark tự động đo thời gian xử lý và dựng cấu trúc 2000 ghế đạt ~1-2ms, đáp ứng hoàn hảo tiêu chí < 2 giây (AC4).
+
+## 🎪 Sự kiện đang mở bán & chi tiết suất diễn (SCRUM-162 / S-08)
+
+* **User Story:** Là người mua vé tôi muốn thấy các sự kiện đang bán và chi tiết từng suất để chọn suất phù hợp trước khi vào sơ đồ ghế.
+* **Sub-tasks:**
+  - **T-17**: Truy vấn suất diễn đang mở bán có phân trang cursor (`GET /api/showtimes`), chỉ trả về các suất `on_sale` trong tương lai của sự kiện đã publish, sắp xếp theo thời gian diễn (`starts_at ASC, id ASC`), tính toán khoảng giá (`min_price`, `max_price`), có bộ đệm Redis 30 giây đạt tiêu chuẩn NFR (p95 < 500ms khi có 200 suất diễn).
+  - **T-18**: Trang danh sách sự kiện (`EventListPage`) và trang chi tiết suất diễn (`ShowtimeDetailPage` / `/showtimes/:id`):
+    - **AC1:** Người dùng chưa đăng nhập vẫn xem được danh sách sự kiện kèm suất gần nhất được sắp xếp theo ngày diễn.
+    - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
+    - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
+    - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+
+

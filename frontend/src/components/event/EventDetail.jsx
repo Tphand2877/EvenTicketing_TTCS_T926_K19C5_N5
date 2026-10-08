@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getAvailability, holdSeats, releaseHold, releaseSeat } from '../../services/eventService'
+import { getAvailability, getSeatMap, holdSeats, releaseHold, releaseSeat } from '../../services/eventService'
 import SeatHoldTimer from '../seatmap/SeatHoldTimer'
 import SeatLegend from '../seatmap/SeatLegend'
 import SeatMapCanvas from '../seatmap/SeatMapCanvas'
@@ -10,11 +10,10 @@ import ShowtimeList from './ShowtimeList'
 import { formatDateTime, formatPrice, getCategoryStyle, getErrorMessage } from './eventFormat'
 
 const MAX_TICKETS = 10
-// Suất diễn lớn hơn ngưỡng này dùng dropdown số lượng thay vì vẽ sơ đồ ghế
-const SEAT_MAP_MAX_CAPACITY = 300
+const FALLBACK_SEAT_MAP_MAX_CAPACITY = 300
 
 /**
- * Chi tiết sự kiện + khung đặt vé (SCRUM-80) với giữ chỗ có thời hạn (SCRUM-84)
+ * Chi tiết sự kiện + khung đặt vé (SCRUM-80, SCRUM-84, SCRUM-165 / S-09)
  */
 export default function EventDetail({ event, showtimes }) {
   const { isAuthenticated } = useAuth()
@@ -22,13 +21,26 @@ export default function EventDetail({ event, showtimes }) {
   const location = useLocation()
   const { color, emoji } = getCategoryStyle(event.category)
 
-  const [selectedId, setSelectedId]     = useState(null)
-  const [quantity, setQuantity]         = useState(1)
-  const [seats, setSeats]               = useState([])
-  const [availability, setAvailability] = useState(null)
-  const [hold, setHold]                 = useState(null)
-  const [busy, setBusy]                 = useState(false)
-  const [message, setMessage]           = useState(null)
+  const initialShowtimeId = (() => {
+    const params = new URLSearchParams(location.search)
+    const stId = params.get('showtimeId')
+    if (stId && /^\d+$/.test(stId)) {
+      const parsed = Number(stId)
+      return showtimes.some((s) => s.id === parsed) ? parsed : null
+    }
+    return null
+  })()
+
+  const [selectedId, setSelectedId]         = useState(initialShowtimeId)
+
+  const [quantity, setQuantity]             = useState(1)
+  const [seats, setSeats]                   = useState([])
+  const [availability, setAvailability]     = useState(null)
+  const [seatMap, setSeatMap]               = useState(null)
+  const [seatMapStatus, setSeatMapStatus]   = useState('idle') // 'idle' | 'loading' | 'loaded' | 'not_on_sale' | 'unavailable'
+  const [hold, setHold]                     = useState(null)
+  const [busy, setBusy]                     = useState(false)
+  const [message, setMessage]               = useState(null)
 
   const selectedShowtime = showtimes.find((s) => s.id === selectedId)
 
@@ -40,15 +52,60 @@ export default function EventDetail({ event, showtimes }) {
     }
   }, [])
 
+  const refreshSeatMap = useCallback(async (showtimeId) => {
+    if (!showtimeId) return
+    setSeatMapStatus('loading')
+    try {
+      const data = await getSeatMap(showtimeId)
+      if (data && Array.isArray(data.seats) && data.seats.length > 0) {
+        setSeatMap(data.seats)
+        setSeatMapStatus('loaded')
+      } else {
+        // Suất diễn chưa nạp sơ đồ ghế (AC3: hiện thông báo chưa mở bán, không hiện lưới rỗng)
+        setSeatMap(null)
+        setSeatMapStatus('not_on_sale')
+      }
+    } catch (err) {
+      setSeatMap(null)
+      const status = err?.response?.status
+      if (status === 409 || status === 404) {
+        // Suất không mở bán (nháp / đã đóng / đã bắt đầu) hoặc không tồn tại: thông báo chưa mở bán (AC3)
+        setSeatMapStatus('not_on_sale')
+      } else {
+        // 503 (dữ liệu sơ đồ theo ghế chưa sẵn sàng) hoặc lỗi mạng: KHÔNG chặn người mua,
+        // quay về giữ chỗ theo số lượng (fallback) như trước khi có sơ đồ ghế thật.
+        setSeatMapStatus('unavailable')
+      }
+    }
+  }, [])
+
   useEffect(() => {
-    if (selectedId) refreshAvailability(selectedId)
-  }, [selectedId, refreshAvailability])
+    if (selectedId) {
+      refreshAvailability(selectedId)
+      refreshSeatMap(selectedId)
+    } else {
+      setSeatMap(null)
+      setSeatMapStatus('idle')
+    }
+  }, [selectedId, refreshAvailability, refreshSeatMap])
 
   const handleSelect = (id) => {
     setSelectedId(id)
     setSeats([])
     setMessage(null)
   }
+
+  const isRealSeatMap = seatMapStatus === 'loaded' && Array.isArray(seatMap) && seatMap.length > 0
+  const isFallbackSeatMap =
+    !isRealSeatMap &&
+    seatMapStatus !== 'not_on_sale' &&
+    !!availability &&
+    availability.capacity <= FALLBACK_SEAT_MAP_MAX_CAPACITY
+
+  const maxQuantity = Math.max(Math.min(MAX_TICKETS, availability?.available ?? MAX_TICKETS), 1)
+  const soldOut = availability?.available === 0 || (isRealSeatMap && seatMap.every((s) => s.status !== 'available'))
+  const isMapMode = isRealSeatMap || isFallbackSeatMap
+  const ticketCount = isMapMode ? seats.length : Math.min(quantity, maxQuantity)
 
   const handleHold = async () => {
     if (!isAuthenticated) {
@@ -59,18 +116,19 @@ export default function EventDetail({ event, showtimes }) {
     setMessage(null)
     try {
       const newHold = await holdSeats(selectedId, ticketCount)
-      // SCRUM-175: lưu thêm mã ghế (seatIds) để bỏ chọn từng ghế
-      setHold({
-        ...newHold,
-        seats: useSeatMap ? seats.map(seatName) : [],
-        seatIds: useSeatMap ? seats : [],
-      })
+// SCRUM-175: lưu thêm mã ghế để có thể bỏ từng ghế
+setHold({
+  ...newHold,
+  seats: isMapMode ? seats.map(seatName) : [],
+  seatIds: isMapMode ? seats : [],
+})
       setSeats([])
     } catch (err) {
       setMessage({ type: 'error', text: getErrorMessage(err, 'Không thể giữ chỗ, vui lòng thử lại.') })
     } finally {
       setBusy(false)
       refreshAvailability(selectedId)
+      refreshSeatMap(selectedId)
     }
   }
 
@@ -84,6 +142,7 @@ export default function EventDetail({ event, showtimes }) {
       setHold(null)
       setBusy(false)
       refreshAvailability(selectedId)
+      refreshSeatMap(selectedId)
     }
   }
 
@@ -110,18 +169,18 @@ export default function EventDetail({ event, showtimes }) {
   }
 
   const handleExpire = useCallback(() => {
-    setHold(null)
-    setMessage({ type: 'error', text: 'Hết thời gian giữ chỗ. Vui lòng chọn lại.' })
-    if (selectedId) refreshAvailability(selectedId)
-  }, [selectedId, refreshAvailability])
+  setHold(null)
+  setMessage({ type: 'error', text: 'Hết thời gian giữ chỗ. Vui lòng chọn lại.' })
 
-  const maxQuantity = Math.max(Math.min(MAX_TICKETS, availability?.available ?? MAX_TICKETS), 1)
-  const soldOut = availability?.available === 0
-  const useSeatMap = !!availability && availability.capacity <= SEAT_MAP_MAX_CAPACITY
-  const ticketCount = useSeatMap ? seats.length : Math.min(quantity, maxQuantity)
-  // SCRUM-175: danh sách ghế đang giữ và số vé đang giữ
-  const heldSeatIds = hold?.seatIds ?? []
-  const heldCount = heldSeatIds.length > 0 ? heldSeatIds.length : (hold?.quantity ?? 0)
+  if (selectedId) {
+    refreshAvailability(selectedId)
+    refreshSeatMap(selectedId)
+  }
+}, [selectedId, refreshAvailability, refreshSeatMap])
+
+// SCRUM-175: danh sách ghế đang giữ
+const heldSeatIds = hold?.seatIds ?? []
+const heldCount = heldSeatIds.length > 0 ? heldSeatIds.length : (hold?.quantity ?? 0)
 
   return (
     <>
@@ -170,22 +229,76 @@ export default function EventDetail({ event, showtimes }) {
               </div>
             )}
 
-            {selectedShowtime && !hold && useSeatMap && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
-                  <span className="text-xs text-gray-500">Tối đa {maxQuantity} ghế mỗi lượt</span>
-                </div>
-                <SeatMapCanvas
-                  capacity={availability.capacity}
-                  takenCount={availability.capacity - availability.available}
-                  selected={seats}
-                  maxSelect={maxQuantity}
-                  onChange={setSeats}
-                  disabled={busy || soldOut}
-                />
-                <SeatLegend />
-              </div>
+            {/* Khung sơ đồ ghế hoặc thông báo trạng thái */}
+            {selectedShowtime && !hold && (
+              <>
+                {seatMapStatus === 'loading' && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+                    <div className="inline-block w-8 h-8 border-3 border-pink-200 border-t-pink-600 rounded-full animate-spin mb-2" />
+                    <p className="text-sm text-gray-500">Đang tải sơ đồ ghế...</p>
+                  </div>
+                )}
+
+                {/* AC3: Suất diễn chưa nạp sơ đồ ghế -> hiện thông báo suất diễn chưa mở bán, KHÔNG hiện lưới rỗng */}
+                {seatMapStatus === 'not_on_sale' && (
+                  <div
+                    role="alert"
+                    className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-800 space-y-2 shadow-sm"
+                  >
+                    <div className="text-3xl" aria-hidden="true">⚠️</div>
+                    <h3 className="font-semibold text-base">Suất diễn chưa mở bán</h3>
+                    <p className="text-xs text-amber-700">
+                      Suất diễn này chưa được nạp sơ đồ ghế hoặc chưa mở bán vé. Vui lòng quay lại sau!
+                    </p>
+                  </div>
+                )}
+
+                {/* AC1: Đã có sơ đồ ghế -> vẽ sơ đồ với 3 trạng thái phân biệt màu và ký hiệu */}
+                {isRealSeatMap && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
+                        <span className="text-xs text-gray-500">
+                          Tối đa {maxQuantity} ghế mỗi lượt &bull; {seatMap.length} ghế
+                        </span>
+                      </div>
+                      <SeatLegend />
+                    </div>
+
+                    <SeatMapCanvas
+                      seats={seatMap}
+                      selected={seats}
+                      maxSelect={maxQuantity}
+                      onChange={setSeats}
+                      disabled={busy || soldOut}
+                      onRefresh={() => refreshSeatMap(selectedId)}
+                    />
+                  </div>
+                )}
+
+                {/* Fallback khi chưa có API seatMap thật nhưng có capacity */}
+                {isFallbackSeatMap && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
+                        <span className="text-xs text-gray-500">Tối đa {maxQuantity} ghế mỗi lượt</span>
+                      </div>
+                      <SeatLegend />
+                    </div>
+                    <SeatMapCanvas
+                      capacity={availability.capacity}
+                      takenCount={availability.capacity - availability.available}
+                      selected={seats}
+                      maxSelect={maxQuantity}
+                      onChange={setSeats}
+                      disabled={busy || soldOut}
+                      onRefresh={() => refreshAvailability(selectedId)}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -203,46 +316,66 @@ export default function EventDetail({ event, showtimes }) {
 
               {selectedShowtime && !hold && (
                 <div className="space-y-3">
-                  {availability && (
-                    <p className="text-xs text-gray-500">
-                      Còn <strong>{availability.available}</strong> / {availability.capacity} chỗ
-                    </p>
-                  )}
-                  {useSeatMap ? (
-                    <p className="text-sm text-gray-700">
-                      {seats.length > 0
-                        ? <>Ghế đã chọn: <strong>{seats.map(seatName).join(', ')}</strong></>
-                        : 'Hãy chọn ghế trên sơ đồ chỗ ngồi.'}
-                    </p>
+                  {seatMapStatus === 'not_on_sale' ? (
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-center">
+                      <p className="text-xs font-semibold text-amber-800">Suất diễn chưa mở bán</p>
+                      <p className="text-[11px] text-amber-600 mt-0.5">Không thể chọn ghế lúc này.</p>
+                    </div>
                   ) : (
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="quantity" className="text-sm font-medium text-gray-700">Số vé</label>
-                    <select
-                      id="quantity"
-                      value={Math.min(quantity, maxQuantity)}
-                      onChange={(e) => setQuantity(Number(e.target.value))}
-                      disabled={soldOut}
-                      className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
-                    >
-                      {Array.from({ length: maxQuantity }, (_, i) => i + 1).map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  </div>
+                    <>
+                      {availability && (
+                        <p className="text-xs text-gray-500">
+                          Còn <strong>{availability.available}</strong> / {availability.capacity} chỗ
+                        </p>
+                      )}
+
+                      {isMapMode ? (
+                        <p className="text-sm text-gray-700">
+                          {seats.length > 0 ? (
+                            <>
+                              Ghế đã chọn: <strong>{seats.map(seatName).join(', ')}</strong>
+                            </>
+                          ) : (
+                            'Hãy chọn ghế trên sơ đồ chỗ ngồi.'
+                          )}
+                        </p>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <label htmlFor="quantity" className="text-sm font-medium text-gray-700">
+                            Số vé
+                          </label>
+                          <select
+                            id="quantity"
+                            value={Math.min(quantity, maxQuantity)}
+                            onChange={(e) => setQuantity(Number(e.target.value))}
+                            disabled={soldOut}
+                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+                          >
+                            {Array.from({ length: maxQuantity }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>
+                                {n}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Tạm tính</span>
+                        <span className="font-bold text-gray-900">
+                          {formatPrice(selectedShowtime.price * ticketCount)}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={handleHold}
+                        disabled={busy || soldOut || ticketCount === 0}
+                        className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {soldOut ? 'Hết chỗ' : busy ? 'Đang giữ chỗ…' : ticketCount ? `Giữ ${ticketCount} chỗ` : 'Giữ chỗ'}
+                      </button>
+                    </>
                   )}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Tạm tính</span>
-                    <span className="font-bold text-gray-900">
-                      {formatPrice(selectedShowtime.price * ticketCount)}
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleHold}
-                    disabled={busy || soldOut || ticketCount === 0}
-                    className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {soldOut ? 'Hết chỗ' : busy ? 'Đang giữ chỗ…' : ticketCount ? `Giữ ${ticketCount} chỗ` : 'Giữ chỗ'}
-                  </button>
                 </div>
               )}
 

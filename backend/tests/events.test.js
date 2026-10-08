@@ -14,6 +14,9 @@ const jwt = require('jsonwebtoken');
 const mockEvents = [];
 const mockShowtimes = [];
 
+jest.mock('../src/models/SeatHold', () =>
+  require('./helpers/memorySeatHoldRepository').createMemoryRepository(mockShowtimes));
+
 jest.mock('../src/models/AuditLog', () => ({
   create: jest.fn().mockResolvedValue(1),
 }));
@@ -43,6 +46,10 @@ jest.mock('../src/models/Event', () => {
       const e = mockEvents.find((x) => x.id === id);
       return e ? withStats(e) : undefined;
     }),
+    findPublicById: jest.fn(async (id) => {
+      const e = mockEvents.find((x) => x.id === id);
+      return e ? withStats(e) : undefined;
+    }),
     create: jest.fn(async (data) => {
       const e = { id: mockEvents.length + 1, status: 'published', category: 'Khac', ...data };
       mockEvents.push(e);
@@ -63,9 +70,13 @@ jest.mock('../src/models/Event', () => {
 
 jest.mock('../src/models/Showtime', () => ({
   listByEvent: jest.fn(async (eventId) => mockShowtimes.filter((s) => s.event_id === eventId)),
+  listVisibleByEvent: jest.fn(async (eventId) =>
+    mockShowtimes.filter((s) => s.event_id === eventId && s.status !== 'draft')),
+  listByEventWithSeatMap: jest.fn(async (eventId) =>
+    mockShowtimes.filter((s) => s.event_id === eventId).map((s) => ({ ...s, seat_count: 0, category_count: 0 }))),
   findById: jest.fn(async (id) => mockShowtimes.find((s) => s.id === id)),
   create: jest.fn(async (data) => {
-    const s = { id: mockShowtimes.length + 1, ends_at: null, ...data };
+    const s = { id: mockShowtimes.length + 1, ends_at: null, status: 'draft', ...data };
     mockShowtimes.push(s);
     return [s];
   }),
@@ -94,16 +105,19 @@ const validEvent = { title: 'Hòa nhạc Mùa Thu', venue: 'Nhà hát Lớn', ca
 beforeEach(() => {
   mockEvents.length = 0;
   mockShowtimes.length = 0;
-  seatHoldService._reset();
+  require('../src/models/SeatHold').reset();
 });
 
-const createEventWithShowtime = async ({ capacity = 3, startsAt = FUTURE } = {}) => {
+// status: trạng thái mở bán (S-07). Mặc định mô phỏng suất đã được mở bán.
+const createEventWithShowtime = async ({ capacity = 3, startsAt = FUTURE, status = 'on_sale' } = {}) => {
   const ev = await request(app).post('/api/events').set('Authorization', ORGANIZER).send(validEvent);
   const st = await request(app)
     .post(`/api/events/${ev.body.data.event.id}/showtimes`)
     .set('Authorization', ORGANIZER)
     .send({ starts_at: startsAt, price: 350000, capacity });
-  return { event: ev.body.data.event, showtime: st.body.data.showtime };
+  const stored = mockShowtimes.find((s) => s.id === st.body.data.showtime.id);
+  stored.status = status;
+  return { event: ev.body.data.event, showtime: stored };
 };
 
 describe('SCRUM-80: Organizer quản lý sự kiện', () => {
@@ -259,6 +273,29 @@ describe('SCRUM-80: Buyer xem sự kiện (public)', () => {
 });
 
 describe('SCRUM-84: Giữ chỗ có thời hạn', () => {
+  test('Availability DB failure is forwarded to the error handler', async () => {
+    const { showtime } = await createEventWithShowtime();
+    const spy = jest.spyOn(seatHoldService, 'getAvailability').mockRejectedValueOnce(new Error('unavailable'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).get(`/api/showtimes/${showtime.id}/availability`);
+    expect(res.status).toBe(500);
+    spy.mockRestore();
+    log.mockRestore();
+  });
+
+  test('Invalid hold UUID returns 404 rather than a database error', async () => {
+    const res = await request(app).delete('/api/showtimes/holds/invalid').set('Authorization', BUYER);
+    expect(res.status).toBe(404);
+  });
+
+  test('Release DB failure is forwarded to the error handler', async () => {
+    const spy = jest.spyOn(seatHoldService, 'releaseHold').mockRejectedValueOnce(new Error('unavailable'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app).delete('/api/showtimes/holds/invalid').set('Authorization', BUYER);
+    expect(res.status).toBe(500);
+    spy.mockRestore();
+    log.mockRestore();
+  });
   test('Buyer giữ chỗ thành công, số chỗ trống giảm tương ứng', async () => {
     const { showtime } = await createEventWithShowtime({ capacity: 3 });
 

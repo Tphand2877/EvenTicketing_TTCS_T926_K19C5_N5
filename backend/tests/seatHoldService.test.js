@@ -1,78 +1,133 @@
-/**
- * SCRUM-84 (spike) - Giữ chỗ có thời hạn: unit test cho seatHoldService
- */
+const { createSeatHoldService, SeatHoldError, DEFAULT_TTL_SECONDS } = require('../src/services/seatHoldService');
+const { createMemoryRepository } = require('./helpers/memorySeatHoldRepository');
+const NOW = Date.UTC(2026, 9, 1, 12);
+const TTL = DEFAULT_TTL_SECONDS * 1000;
+let repository;
+let service;
+const hold = (args = {}) => service.holdSeats({ showtimeId: 1, userId: 10, quantity: 2, now: NOW, ...args });
+const availability = (now = NOW) => service.getAvailability({ showtimeId: 1, capacity: 3, now });
 
-const seatHoldService = require('../src/services/seatHoldService');
+beforeEach(() => {
+  delete process.env.SEAT_HOLD_TTL_SECONDS;
+  repository = createMemoryRepository([{ id: 1, capacity: 3, status: 'on_sale' }, { id: 2, capacity: 3, status: 'on_sale' }]);
+  service = createSeatHoldService(repository);
+});
+afterEach(() => delete process.env.SEAT_HOLD_TTL_SECONDS);
 
-const TTL_MS = seatHoldService.DEFAULT_TTL_SECONDS * 1000;
-const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
+test('Hold reduces availability and preserves the public response contract', async () => {
+  const result = await hold();
+  expect(result).toEqual({ id: expect.any(String), showtimeId: 1, quantity: 2, expiresAt: new Date(NOW + TTL).toISOString() });
+  expect(await availability()).toEqual({ capacity: 3, held: 2, available: 1 });
+});
+test('Insufficient capacity rejects without replacing the existing hold', async () => {
+  const first = await hold({ quantity: 1 });
+  await hold({ userId: 11, quantity: 2 });
+  await expect(hold({ quantity: 2 })).rejects.toMatchObject({ code: 'INSUFFICIENT_SEATS', details: { available: 1 } });
+  expect(repository.rows.get(first.id).status).toBe('active');
+});
+test('At exact expiry availability is free and querying does not cancel the stored row (AC2)', async () => {
+  const first = await hold({ quantity: 3 });
+  expect(await availability(NOW + TTL - 1)).toEqual({ capacity: 3, held: 3, available: 0 });
+  expect(await availability(NOW + TTL)).toEqual({ capacity: 3, held: 0, available: 3 });
+  expect(repository.rows.get(first.id).status).toBe('active');
+  await expect(hold({ userId: 11, quantity: 3, now: NOW + TTL })).resolves.toMatchObject({ quantity: 3 });
+});
+test('Cleanup cancels expired holds once and preserves the cancellation time (AC1/NFR)', async () => {
+  const first = await hold();
+  expect(await service.cleanupExpired({ now: NOW + TTL })).toBe(1);
+  const snapshot = { ...repository.rows.get(first.id) };
+  expect(snapshot.status).toBe('cancelled');
+  expect(await service.cleanupExpired({ now: NOW + TTL + 1000 })).toBe(0);
+  expect(repository.rows.get(first.id)).toEqual(snapshot);
+});
+test('Cleanup preserves unexpired holds', async () => {
+  const first = await hold();
+  expect(await service.cleanupExpired({ now: NOW + TTL - 1 })).toBe(0);
+  expect(repository.rows.get(first.id).status).toBe('active');
+});
+test('Replacing a hold cancels the old record and renews its TTL', async () => {
+  const first = await hold();
+  const second = await hold({ quantity: 3, now: NOW + 1000 });
+  expect(second.id).not.toBe(first.id);
+  expect(second.expiresAt).toBe(new Date(NOW + 1000 + TTL).toISOString());
+  expect(repository.rows.get(first.id).status).toBe('cancelled');
+  expect(await availability(NOW + 1000)).toMatchObject({ held: 3 });
+  expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('not_found');
+});
+test('Showtimes have independent capacity', async () => {
+  await hold({ quantity: 3 });
+  expect(await service.getAvailability({ showtimeId: 2, capacity: 3, now: NOW })).toMatchObject({ available: 3 });
+});
+test('Only the owner can release; retry returns not_found', async () => {
+  const first = await hold();
+  expect(await service.releaseHold({ holdId: first.id, userId: 99, now: NOW })).toBe('forbidden');
+  expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('released');
+  expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('not_found');
+  expect(await availability()).toMatchObject({ available: 3 });
+});
+test('An expired/missing/invalid hold cannot be released', async () => {
+  const first = await hold();
+  expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW + TTL })).toBe('not_found');
+  expect(await service.releaseHold({ holdId: 'bad', userId: 10 })).toBe('not_found');
+  expect(await service.releaseHold({ holdId: '00000000-0000-0000-0000-000000000000', userId: 10 })).toBe('not_found');
+});
+test('TTL retains the existing SEAT_HOLD_TTL_SECONDS contract', async () => {
+  process.env.SEAT_HOLD_TTL_SECONDS = '60';
+  const first = await hold();
+  expect(first.expiresAt).toBe(new Date(NOW + 60000).toISOString());
+});
+test('Missing showtime fails before storing a hold', async () => {
+  await expect(hold({ showtimeId: 99 })).rejects.toMatchObject({ code: 'SHOWTIME_NOT_FOUND' });
+});
+test.each(['pending_payment', 'confirmed'])('Cleanup preserves a hold already assigned to an order (%s, AC4)', async (status) => {
+  const first = await hold({ quantity: 3 });
+  // Given an allocation produced by checkout; S-12 does not implement checkout.
+  Object.assign(repository.rows.get(first.id), { status, order_id: 'existing-order' });
+  const snapshot = { ...repository.rows.get(first.id) };
+  expect(await service.cleanupExpired({ now: NOW + TTL })).toBe(0);
+  expect(repository.rows.get(first.id)).toEqual(snapshot);
+  expect(await availability(NOW + TTL)).toMatchObject({ held: 3, available: 0 });
+  expect(await service.releaseHold({ holdId: first.id, userId: 10, now: NOW })).toBe('not_found');
+  await expect(hold({ userId: 11, now: NOW + TTL })).rejects.toMatchObject({ code: 'INSUFFICIENT_SEATS' });
+});
 
-describe('seatHoldService (SCRUM-84)', () => {
-  beforeEach(() => {
-    delete process.env.SEAT_HOLD_TTL_SECONDS;
-    seatHoldService._reset();
+describe('SCRUM-179: Simultaneous seat hold attempts', () => {
+  test('Held seats cannot be selected by anyone else, even when clicked simultaneously', async () => {
+    // Capacity = 3, each buyer requests 2 seats. Only one buyer can succeed, the other gets INSUFFICIENT_SEATS.
+    const buyer1Promise = hold({ userId: 101, quantity: 2 });
+    const buyer2Promise = hold({ userId: 102, quantity: 2 });
+
+    const results = await Promise.allSettled([buyer1Promise, buyer2Promise]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(SeatHoldError);
+    expect(rejected[0].reason.code).toBe('INSUFFICIENT_SEATS');
+    expect(rejected[0].reason.details.available).toBe(1);
+
+    const activeHolds = [...repository.rows.values()].filter((h) => h.status === 'active');
+    expect(activeHolds).toHaveLength(1);
+    expect(activeHolds[0].quantity).toBe(2);
   });
 
-  test('Giữ chỗ trừ vào số chỗ còn trống và trả về thời điểm hết hạn', () => {
-    const hold = seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 2, capacity: 5, now: NOW });
+  test('Multiple simultaneous buyers competing for the last seat: exactly one succeeds', async () => {
+    // 5 buyers trying to hold the last available seat simultaneously
+    const buyers = [201, 202, 203, 204, 205];
+    const holdPromises = buyers.map((userId) => hold({ userId, quantity: 3 }));
 
-    expect(hold.quantity).toBe(2);
-    expect(hold.expiresAt).toBe(new Date(NOW + TTL_MS).toISOString());
-    expect(seatHoldService.getAvailability({ showtimeId: 1, capacity: 5, now: NOW }))
-      .toEqual({ capacity: 5, held: 2, available: 3 });
-  });
+    const results = await Promise.allSettled(holdPromises);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
 
-  test('Không cho giữ vượt quá số chỗ còn trống (chống bán vượt)', () => {
-    seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 2, capacity: 3, now: NOW });
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(4);
+    rejected.forEach((r) => {
+      expect(r.reason.code).toBe('INSUFFICIENT_SEATS');
+    });
 
-    expect(() =>
-      seatHoldService.holdSeats({ showtimeId: 1, userId: 11, quantity: 2, capacity: 3, now: NOW })
-    ).toThrow(seatHoldService.SeatHoldError);
-
-    try {
-      seatHoldService.holdSeats({ showtimeId: 1, userId: 11, quantity: 2, capacity: 3, now: NOW });
-    } catch (err) {
-      expect(err.code).toBe('INSUFFICIENT_SEATS');
-      expect(err.details.available).toBe(1);
-    }
-  });
-
-  test('Hold hết hạn tự động trả chỗ lại', () => {
-    seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 3, capacity: 3, now: NOW });
-
-    const afterExpiry = NOW + TTL_MS;
-    expect(seatHoldService.getAvailability({ showtimeId: 1, capacity: 3, now: afterExpiry }).available).toBe(3);
-    expect(() =>
-      seatHoldService.holdSeats({ showtimeId: 1, userId: 11, quantity: 3, capacity: 3, now: afterExpiry })
-    ).not.toThrow();
-  });
-
-  test('Mỗi user chỉ có 1 hold / suất diễn: giữ lại sẽ thay thế hold cũ', () => {
-    const first = seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 2, capacity: 3, now: NOW });
-    // Đổi từ 2 lên 3 chỗ vẫn hợp lệ vì 2 chỗ cũ của chính user được trả lại trước
-    const second = seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 3, capacity: 3, now: NOW + 1000 });
-
-    expect(second.id).not.toBe(first.id);
-    expect(seatHoldService.getAvailability({ showtimeId: 1, capacity: 3, now: NOW + 1000 }).held).toBe(3);
-    expect(seatHoldService.releaseHold({ holdId: first.id, userId: 10, now: NOW + 1000 })).toBe('not_found');
-  });
-
-  test('Các suất diễn khác nhau không ảnh hưởng nhau', () => {
-    seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 3, capacity: 3, now: NOW });
-    expect(seatHoldService.getAvailability({ showtimeId: 2, capacity: 3, now: NOW }).available).toBe(3);
-  });
-
-  test('Chỉ chủ hold được hủy', () => {
-    const hold = seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 1, capacity: 3, now: NOW });
-
-    expect(seatHoldService.releaseHold({ holdId: hold.id, userId: 99, now: NOW })).toBe('forbidden');
-    expect(seatHoldService.releaseHold({ holdId: hold.id, userId: 10, now: NOW })).toBe('released');
-    expect(seatHoldService.getAvailability({ showtimeId: 1, capacity: 3, now: NOW }).available).toBe(3);
-  });
-
-  test('TTL đọc từ biến môi trường SEAT_HOLD_TTL_SECONDS', () => {
-    process.env.SEAT_HOLD_TTL_SECONDS = '60';
-    const hold = seatHoldService.holdSeats({ showtimeId: 1, userId: 10, quantity: 1, capacity: 3, now: NOW });
-    expect(hold.expiresAt).toBe(new Date(NOW + 60 * 1000).toISOString());
+    expect(await availability()).toEqual({ capacity: 3, held: 3, available: 0 });
   });
 });
+
