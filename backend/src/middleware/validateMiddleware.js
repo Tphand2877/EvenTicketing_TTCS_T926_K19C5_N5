@@ -208,66 +208,23 @@ const validateSeatHold = (req, res, next) => {
   next();
 };
 
-// ─── S-05 / T-12: Nạp sơ đồ ghế từ JSON ──────────────────────────────────────
-
-const SEAT_MAP_MAX_SEATS = 10000;
-const SEAT_MAP_MAX_CATEGORIES = 50;
-const SEAT_MAP_MAX_ERRORS = 10;
+// ─── S-05 / S-06 (T-12, T-13): Nạp sơ đồ ghế từ JSON ───────────────────────
+const { validateSeatMapStructure } = require('../utils/seatMapValidator');
 
 /**
  * Body: { "seats": [ { "row": "A", "number": 1, "category": "VIP" }, ... ] }
- * Kiểm tra toàn bộ tệp TRƯỚC khi ghi DB; trả tối đa 10 lỗi, mỗi lỗi chỉ rõ vị trí ghế.
- * Kết quả chuẩn hoá (row/category đã trim) đặt vào req.seatMap.
+ * Kiểm tra toàn bộ tệp TRƯỚC khi ghi DB; trả đầy đủ toàn bộ danh sách lỗi (T-13 / AC3).
+ * Mỗi lỗi chỉ rõ vị trí ghế (AC1, AC2).
+ * Kết quả chuẩn hoá (row/category đã trim) đặt vào req.seatMap, tổng kết đặt vào req.seatMapSummary.
  */
 const validateSeatMap = (req, res, next) => {
-  const seats = req.body?.seats;
-  if (!Array.isArray(seats) || seats.length === 0) {
-    return respondErrors(res, ['Tệp phải có mảng "seats" với ít nhất 1 ghế.']);
-  }
-  if (seats.length > SEAT_MAP_MAX_SEATS) {
-    return respondErrors(res, [`Tệp có ${seats.length} ghế, vượt giới hạn ${SEAT_MAP_MAX_SEATS} ghế.`]);
+  const result = validateSeatMapStructure(req.body);
+  if (!result.isValid) {
+    return respondErrors(res, result.errors);
   }
 
-  const errors = [];
-  const normalized = [];
-  const positions = new Map();
-  const categories = new Set();
-
-  for (let i = 0; i < seats.length && errors.length < SEAT_MAP_MAX_ERRORS; i += 1) {
-    const seat = seats[i];
-    const label = `Ghế #${i + 1}`;
-    if (seat === null || typeof seat !== 'object' || Array.isArray(seat)) {
-      errors.push(`${label}: phải là object { row, number, category }.`);
-      continue;
-    }
-    const row = typeof seat.row === 'string' ? seat.row.trim() : '';
-    const category = typeof seat.category === 'string' ? seat.category.trim() : '';
-    const seatErrors = [];
-    if (!row || row.length > 10) seatErrors.push('"row" là chuỗi 1–10 ký tự');
-    if (!Number.isInteger(seat.number) || seat.number < 1 || seat.number > 9999) {
-      seatErrors.push('"number" là số nguyên 1–9999');
-    }
-    if (!category || category.length > 100) seatErrors.push('"category" là chuỗi 1–100 ký tự');
-    if (seatErrors.length > 0) {
-      errors.push(`${label}: ${seatErrors.join(', ')}.`);
-      continue;
-    }
-    const key = `${row}\u0000${seat.number}`;
-    if (positions.has(key)) {
-      errors.push(`${label}: trùng ghế ${row}${seat.number} với ghế #${positions.get(key) + 1}.`);
-      continue;
-    }
-    positions.set(key, i);
-    categories.add(category);
-    normalized.push({ row, number: seat.number, category });
-  }
-
-  if (errors.length === 0 && categories.size > SEAT_MAP_MAX_CATEGORIES) {
-    errors.push(`Tệp có ${categories.size} hạng ghế, vượt giới hạn ${SEAT_MAP_MAX_CATEGORIES} hạng.`);
-  }
-  if (errors.length > 0) return respondErrors(res, errors);
-
-  req.seatMap = normalized;
+  req.seatMap = result.normalized;
+  req.seatMapSummary = result.summary;
   next();
 };
 

@@ -22,6 +22,7 @@ const {
   holdSeats,
   releaseHold,
   importSeatMap,
+  validateSeatMapPreview,
   listEventShowtimes,
   openSales,
   closeSales,
@@ -43,11 +44,11 @@ eventRouter.get('/', { public: true }, listEvents);
 // Khai báo /mine TRƯỚC /:id để không bị hiểu nhầm "mine" là id
 eventRouter.get('/mine', MANAGERS, listMyEvents);
 eventRouter.get('/:id', { public: true }, getEvent);
+eventRouter.get('/:id/showtimes', MANAGERS, listEventShowtimes);
 eventRouter.post('/', MANAGERS, validateEvent(), createEvent);
 eventRouter.patch('/:id', MANAGERS, validateEvent({ partial: true }), updateEvent);
 eventRouter.delete('/:id', MANAGERS, deleteEvent);
 eventRouter.post('/:id/showtimes', MANAGERS, validateShowtime(), createShowtime);
-eventRouter.get('/:id/showtimes', MANAGERS, listEventShowtimes);
 
 // ─── /api/showtimes ──────────────────────────────────────────────────────────
 const showtimeRouter = createSecureRouter();
@@ -59,6 +60,7 @@ showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
 showtimeRouter.get('/:id', { public: true }, getPublicShowtime);
 showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
 showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);
+showtimeRouter.post('/:id/seat-map/validate', MANAGERS, validateSeatMap, validateSeatMapPreview);
 showtimeRouter.put('/:id/seat-map', MANAGERS, validateSeatMap, importSeatMap);
 showtimeRouter.post('/:id/open-sales', MANAGERS, openSales);
 showtimeRouter.post('/:id/close-sales', MANAGERS, closeSales);

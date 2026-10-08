@@ -75,10 +75,59 @@ describe('S-05: validate tệp sơ đồ ghế', () => {
     expect(res.body.errors[0]).toBe('Ghế #2: trùng ghế A1 với ghế #1.');
   });
 
-  test('Trả tối đa 10 lỗi', async () => {
+  test('S-06 / AC1: Thiếu trường bắt buộc ở một ghế → từ chối toàn bộ và chỉ rõ ghế nào thiếu trường nào', async () => {
+    const res = await upload({ seats: [
+      { row: 'A', number: 1, category: 'VIP' },
+      { number: 2, category: 'VIP' },
+      { row: 'B', category: 'VIP' },
+      { row: 'C', number: 3 },
+    ] });
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toHaveLength(3);
+    expect(res.body.errors[0]).toBe('Ghế #2: thiếu trường bắt buộc "row" (chuỗi 1–10 ký tự).');
+    expect(res.body.errors[1]).toBe('Ghế #3: thiếu trường bắt buộc "number" (số nguyên 1–9999).');
+    expect(res.body.errors[2]).toBe('Ghế #4: thiếu trường bắt buộc "category" (chuỗi 1–100 ký tự).');
+    expect(seatMapService.importSeatMap).not.toHaveBeenCalled();
+  });
+
+  test('S-06 / AC3: Trả đủ toàn bộ danh sách lỗi trong một lần (không bị giới hạn 10 lỗi)', async () => {
     const res = await upload({ seats: Array.from({ length: 30 }, () => ({ row: 'A' })) });
     expect(res.status).toBe(400);
-    expect(res.body.errors).toHaveLength(10);
+    expect(res.body.errors).toHaveLength(30);
+  });
+
+  test('S-06 / AC4: Tệp không phải JSON hợp lệ → báo lỗi định dạng kèm vị trí ký tự, không hiện lỗi 500', async () => {
+    const res = await request(app)
+      .put('/api/showtimes/1/seat-map')
+      .set('Authorization', OWNER)
+      .set('Content-Type', 'application/json')
+      .send('{ "seats": [ invalid json }');
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/JSON/i);
+    expect(res.body.message).toMatch(/position \d+/i);
+  });
+
+  test('S-06 / AC5: API kiểm tra xem trước sơ đồ ghế (POST /api/showtimes/:id/seat-map/validate) trả về lưới ghế hợp lệ trước khi nạp', async () => {
+    const res = await request(app)
+      .post('/api/showtimes/1/seat-map/validate')
+      .set('Authorization', OWNER)
+      .send({ seats: [
+        { row: 'A', number: 1, category: 'VIP' },
+        { row: 'A', number: 2, category: 'VIP' },
+        { row: 'B', number: 1, category: 'Thường' },
+      ] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.isValid).toBe(true);
+    expect(res.body.data.seatCount).toBe(3);
+    expect(res.body.data.summary).toMatchObject({
+      totalSeats: 3,
+      totalRows: 2,
+      rows: ['A', 'B'],
+      categories: ['VIP', 'Thường'],
+    });
+    expect(seatMapService.importSeatMap).not.toHaveBeenCalled();
   });
 
   test('Vượt 10.000 ghế → 400', async () => {
