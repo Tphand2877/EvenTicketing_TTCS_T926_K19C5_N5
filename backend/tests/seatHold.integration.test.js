@@ -46,12 +46,15 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
       CREATE VIEW public_sold_seats AS
         SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
     `);
-    await mockDatabase('seat_categories').insert({ id: 1, showtime_id: 1, name: 'Standard', price: 100000 });
+    await mockDatabase('seat_categories').insert([
+      { id: 1, showtime_id: 1, name: 'Standard', price: 100000 },
+      { id: 2, showtime_id: 2, name: 'Standard', price: 100000 },
+    ]);
     await mockDatabase('seats').insert([
       { id: 1, showtime_id: 1, row_label: 'A', seat_number: 1, category_id: 1 },
       { id: 2, showtime_id: 1, row_label: 'A', seat_number: 2, category_id: 1 },
       { id: 3, showtime_id: 1, row_label: 'A', seat_number: 3, category_id: 1 },
-      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: null },
+      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: 2 },
     ]);
   }, 30000);
   beforeEach(async () => {
