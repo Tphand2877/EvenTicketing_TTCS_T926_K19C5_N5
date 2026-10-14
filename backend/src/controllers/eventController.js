@@ -15,6 +15,7 @@ const Showtime = require('../models/Showtime');
 const seatHoldService = require('../services/seatHoldService');
 const seatMapService = require('../services/seatMapService');
 const showtimeSaleService = require('../services/showtimeSaleService');
+const seatCategoryService = require('../services/seatCategoryService');
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
@@ -433,6 +434,55 @@ const getStatusLog = async (req, res, next) => {
   }
 };
 
+// ─── S-15 / T-34: Đặt giá vé theo từng hạng ghế ─────────────────────────────
+
+/**
+ * GET /api/showtimes/:id/categories
+ * Lấy danh sách hạng ghế kèm số ghế và giá hiện tại của suất diễn.
+ */
+const getShowtimeCategories = async (req, res, next) => {
+  try {
+    const showtimeId = parseId(req.params.id);
+    if (!showtimeId) return notFound(res, 'Không tìm thấy suất diễn.');
+
+    const showtime = await Showtime.findById(showtimeId);
+    if (!showtime) return notFound(res, 'Không tìm thấy suất diễn.');
+
+    const categories = await seatCategoryService.listCategoriesByShowtime(showtimeId);
+    return res.json({ success: true, data: { categories } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * PUT /api/showtimes/:id/categories/prices  { prices: [{ id, price }] }
+ * Đặt giá riêng cho từng hạng ghế của một suất diễn (organizer sở hữu event hoặc admin).
+ */
+const updateCategoryPrices = async (req, res, next) => {
+  try {
+    const showtime = await loadManageableShowtime(parseId(req.params.id), req, res);
+    if (!showtime) return undefined;
+
+    const categories = await seatCategoryService.updateCategoryPrices({
+      showtimeId: showtime.id,
+      prices: req.categoryPrices,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Đã cập nhật giá vé cho các hạng ghế thành công.',
+      data: { categories },
+    });
+  } catch (err) {
+    if (err instanceof seatCategoryService.SeatCategoryError) {
+      const status = err.code === 'SHOWTIME_NOT_FOUND' ? 404 : 400;
+      return res.status(status).json({ success: false, code: err.code, message: err.message });
+    }
+    return next(err);
+  }
+};
+
 module.exports = {
   importSeatMap,
   validateSeatMapPreview,
@@ -440,6 +490,8 @@ module.exports = {
   openSales,
   closeSales,
   getStatusLog,
+  getShowtimeCategories,
+  updateCategoryPrices,
   listEvents,
   getEvent,
   listMyEvents,
@@ -453,4 +505,5 @@ module.exports = {
   holdSeats,
   releaseHold,
 };
+
 

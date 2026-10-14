@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { SEATS_PER_ROW, rowLabel } from './seatUtils'
+import { formatPrice } from '../event/eventFormat'
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.2
@@ -26,6 +27,7 @@ export default function SeatMapCanvas({
   onRefresh,
 }) {
   const [zoom, setZoom] = useState(1.0)
+  const [hoveredSeat, setHoveredSeat] = useState(null)
 
   // Chuẩn hóa danh sách ghế: hỗ trợ cả mảng seats từ API T-19 hoặc fallback capacity
   const normalizedSeats = useMemo(() => {
@@ -174,6 +176,34 @@ export default function SeatMapCanvas({
         </div>
       </div>
 
+      {/* S-15 / AC1: Thanh thông tin chi tiết khi trỏ chuột vào ghế */}
+      {hoveredSeat ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-pink-200 rounded-xl text-xs shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-900">
+              Ghế {hoveredSeat.row}{hoveredSeat.number}
+            </span>
+            {hoveredSeat.category && (
+              <span className="bg-white border border-gray-200 px-2 py-0.5 rounded text-[11px] font-semibold text-gray-700">
+                Hạng {hoveredSeat.category}
+              </span>
+            )}
+            <span className="text-gray-500 text-[11px]">
+              &bull; {hoveredSeat.status === 'sold' ? 'Đã bán' : hoveredSeat.status === 'held' ? 'Đang có người giữ' : 'Còn trống'}
+            </span>
+          </div>
+          <div className="font-bold text-pink-600 text-sm">
+            {hoveredSeat.price !== undefined && hoveredSeat.price !== null
+              ? formatPrice(hoveredSeat.price)
+              : 'Chưa có giá'}
+          </div>
+        </div>
+      ) : null}
+
       {/* Sân khấu */}
       <div className="text-center text-[10px] font-semibold tracking-widest text-gray-400 uppercase select-none">
         <div className="mx-auto mb-1.5 h-2 w-2/3 max-w-md rounded-full bg-gradient-to-r from-violet-500 via-pink-500 to-amber-400 shadow-sm" />
@@ -225,17 +255,26 @@ export default function SeatMapCanvas({
 
                   const isButtonDisabled = disabled || !isAvailable || (full && !isSelected)
 
+                  // S-15 / AC1: Hiện đúng giá khi trỏ vào ghế
+                  const priceText = seat.price !== undefined && seat.price !== null
+                    ? ` - ${formatPrice(seat.price)}`
+                    : ''
+                  const seatTitle = `Ghế ${seat.row}${seat.number} (${statusText})${seat.category ? ` - ${seat.category}` : ''}${priceText}`
+
                   return (
                     <button
                       key={seat.id}
                       type="button"
                       disabled={isButtonDisabled}
                       onClick={() => toggleSeat(seat)}
-                      title={`Ghế ${seat.row}${seat.number} (${statusText})${seat.category ? ` - ${seat.category}` : ''}`}
-                      aria-label={`Ghế ${seat.row}${seat.number} - ${statusText}`}
+                      onMouseEnter={() => setHoveredSeat(seat)}
+                      onMouseLeave={() => setHoveredSeat((curr) => (curr?.id === seat.id ? null : curr))}
+                      title={seatTitle}
+                      aria-label={`Ghế ${seat.row}${seat.number} - ${statusText}${priceText}`}
                       aria-pressed={isSelected}
                       data-seat-id={seat.id}
                       data-seat-status={seat.status}
+                      data-seat-price={seat.price}
                       className={`relative min-w-[28px] h-7 px-1 rounded flex items-center justify-center gap-0.5 text-[10px] font-medium border transition-colors select-none ${stateClass}`}
                     >
                       <span className="text-[10px] leading-none shrink-0 font-bold" aria-hidden="true">

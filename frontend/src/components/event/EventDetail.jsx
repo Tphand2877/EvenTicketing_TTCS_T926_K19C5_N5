@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { getAvailability, getSeatMap, holdSeats, releaseHold } from '../../services/eventService'
@@ -107,6 +107,26 @@ export default function EventDetail({ event, showtimes }) {
   const isMapMode = isRealSeatMap || isFallbackSeatMap
   const ticketCount = isMapMode ? seats.length : Math.min(quantity, maxQuantity)
 
+  // S-15 / AC1: Tổng tiền tính theo giá từng hạng ghế đã chọn
+  const totalCalculated = useMemo(() => {
+    if (isMapMode && seats.length > 0) {
+      return seats.reduce((sum, s) => sum + (s.price !== undefined && s.price !== null ? Number(s.price) : Number(selectedShowtime?.price || 0)), 0)
+    }
+    return (Number(selectedShowtime?.price) || 0) * ticketCount
+  }, [isMapMode, seats, selectedShowtime?.price, ticketCount])
+
+  // Tóm tắt giá các hạng ghế từ sơ đồ
+  const categoryPricesSummary = useMemo(() => {
+    if (!Array.isArray(seatMap)) return []
+    const map = new Map()
+    for (const s of seatMap) {
+      if (s.category && !map.has(s.category)) {
+        map.set(s.category, s.price)
+      }
+    }
+    return Array.from(map.entries()).map(([name, price]) => ({ name, price }))
+  }, [seatMap])
+
   const handleHold = async () => {
     if (!isAuthenticated) {
       navigate(`/login?returnTo=${encodeURIComponent(location.pathname)}`)
@@ -116,11 +136,12 @@ export default function EventDetail({ event, showtimes }) {
     setMessage(null)
     try {
       const newHold = await holdSeats(selectedId, ticketCount)
-      // SCRUM-175: lưu thêm mã ghế để có thể bỏ từng ghế
+      // SCRUM-175 / S-15: lưu thêm mã ghế và tổng tiền tạm tính
       setHold({
         ...newHold,
         seats: isMapMode ? seats.map(seatName) : [],
         seatIds: isMapMode ? seats : [],
+        totalPrice: totalCalculated,
       })
       setSeats([])
     } catch (err) {
@@ -267,6 +288,25 @@ export default function EventDetail({ event, showtimes }) {
                       <SeatLegend />
                     </div>
 
+                    {/* S-15 / AC1: Danh sách hạng ghế kèm giá vé niêm yết */}
+                    {categoryPricesSummary.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100">
+                        <span className="text-xs font-medium text-gray-500">Bảng giá từng hạng:</span>
+                        {categoryPricesSummary.map(({ name, price }) => (
+                          <span
+                            key={name}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 border border-gray-200 text-gray-700 shadow-xs"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-pink-500" />
+                            <span>{name}:</span>
+                            <span className="text-pink-600 font-bold">
+                              {price != null ? formatPrice(price) : 'Chưa định giá'}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     <SeatMapCanvas
                       seats={seatMap}
                       selected={seats}
@@ -364,7 +404,7 @@ export default function EventDetail({ event, showtimes }) {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">Tạm tính</span>
                         <span className="font-bold text-gray-900">
-                          {formatPrice(selectedShowtime.price * ticketCount)}
+                          {formatPrice(totalCalculated)}
                         </span>
                       </div>
 
@@ -407,14 +447,26 @@ export default function EventDetail({ event, showtimes }) {
                       ))}
                     </ul>
                   )}
+
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Tạm tính</span>
                     <span className="font-bold text-gray-900">
-                      {formatPrice(selectedShowtime.price * heldCount)}
+                      {formatPrice(hold.totalPrice ?? ((Number(selectedShowtime?.price) || 0) * heldCount))}
                     </span>
                   </div>
                   <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={handleExpire} />
-                  <Link to="/checkout" state={{ hold, event, showtime: selectedShowtime }} className="btn-primary block text-center">
+                  <Link
+                    to="/checkout"
+                    state={{
+                      hold: {
+                        ...hold,
+                        totalPrice: hold.totalPrice ?? ((Number(selectedShowtime?.price) || 0) * heldCount),
+                      },
+                      event,
+                      showtime: selectedShowtime,
+                    }}
+                    className="btn-primary block text-center"
+                  >
                     Tiếp tục thanh toán
                   </Link>
                   <button

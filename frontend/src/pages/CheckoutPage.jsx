@@ -60,7 +60,7 @@ const [expired, setExpired] = useState(() => !!hold && new Date(hold.expiresAt).
     if (Object.keys(found).length === 0) setSubmitted(true)
   }
 
-  const total = showtime ? showtime.price * hold.quantity : 0
+  const total = hold?.totalPrice != null ? hold.totalPrice : (showtime ? showtime.price * hold.quantity : 0)
 
   let content
   if (!hold || !event || !showtime) {

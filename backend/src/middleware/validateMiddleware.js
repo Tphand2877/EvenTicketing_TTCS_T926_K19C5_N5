@@ -228,8 +228,84 @@ const validateSeatMap = (req, res, next) => {
   next();
 };
 
+// ─── S-15 / T-34: Đặt giá vé theo hạng ghế ──────────────────────────────────
+/**
+ * Body: { prices: [ { id: 1, price: 500000 }, ... ] } hoặc { prices: { "1": 500000 } }
+ * AC4 / NFR: Giá lưu bằng số nguyên đơn vị đồng, không dùng số thực, không âm.
+ */
+const validateCategoryPrices = (req, res, next) => {
+  const body = req.body || {};
+  let rawList = body.prices || body.categories;
+
+  if (Array.isArray(body)) {
+    rawList = body;
+  } else if (rawList && !Array.isArray(rawList) && typeof rawList === 'object') {
+    // Chuyển dạng object { [id]: price } sang mảng
+    rawList = Object.entries(rawList).map(([id, price]) => ({ id: Number(id), price }));
+  }
+
+  if (!Array.isArray(rawList) || rawList.length === 0) {
+    return respondErrors(res, ['Danh sách giá vé theo hạng ghế không được để trống.']);
+  }
+
+  const errors = [];
+  const normalized = [];
+
+  rawList.forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      errors.push(`Mục giá #${index + 1} không hợp lệ.`);
+      return;
+    }
+
+    const id = item.id !== undefined && item.id !== null ? Number(item.id) : undefined;
+    const name = typeof item.name === 'string' ? item.name.trim() : undefined;
+
+    if ((id === undefined || Number.isNaN(id)) && !name) {
+      errors.push(`Mục giá #${index + 1}: cần cung cấp id hoặc tên hạng ghế.`);
+      return;
+    }
+
+    const rawPrice = item.price;
+    if (rawPrice === null || rawPrice === undefined || rawPrice === '') {
+      errors.push(`Hạng ghế ${name || id}: giá vé không được để trống.`);
+      return;
+    }
+
+    if (typeof rawPrice === 'string' && rawPrice.includes('.')) {
+      errors.push(`Hạng ghế ${name || id}: giá lưu bằng số nguyên đơn vị đồng, không dùng số thực.`);
+      return;
+    }
+
+    const priceNum = Number(rawPrice);
+    if (Number.isNaN(priceNum)) {
+      errors.push(`Hạng ghế ${name || id}: giá vé phải là số hợp lệ.`);
+      return;
+    }
+
+    if (!Number.isInteger(priceNum)) {
+      errors.push(`Hạng ghế ${name || id}: giá lưu bằng số nguyên đơn vị đồng, không dùng số thực.`);
+      return;
+    }
+
+    if (priceNum < 0) {
+      errors.push(`Hạng ghế ${name || id}: giá vé không được là số âm.`);
+      return;
+    }
+
+    normalized.push({ id, name, price: priceNum });
+  });
+
+  if (errors.length > 0) {
+    return respondErrors(res, errors);
+  }
+
+  req.categoryPrices = normalized;
+  next();
+};
+
 module.exports = {
   validateSeatMap,
+  validateCategoryPrices,
   validateLogin,
   validateRegister,
   validateResendVerification,
@@ -237,3 +313,4 @@ module.exports = {
   validateShowtime,
   validateSeatHold,
 };
+

@@ -124,4 +124,18 @@ export const closeSales = async (showtimeId) => {
   return data
 }
 
+// ── S-15 / T-35: Đặt giá vé theo hạng ghế ────────────────────────────────────
+
+export const getShowtimeCategories = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/categories`)
+  return data.data.categories
+}
+
+export const updateCategoryPrices = async (showtimeId, prices) => {
+  const payload = Array.isArray(prices) ? { prices } : prices
+  const { data } = await apiClient.put(`/showtimes/${showtimeId}/categories/prices`, payload)
+  return data
+}
+
+
 
