@@ -94,7 +94,7 @@ const createMoMoGateway = ({ config, fetchImpl = globalThis.fetch }) => {
         throw new PaymentGatewayError('INVALID_PAYMENT_REQUEST', 'MoMo order information is invalid.');
       }
 
-      // T-41 requires repeated pay clicks for one order to reuse its gateway idempotency key.
+      // T-41 uses the order UUID as its stable gateway request ID.
       const requestId = orderId;
       const request = {
         partnerCode: config.partnerCode,
