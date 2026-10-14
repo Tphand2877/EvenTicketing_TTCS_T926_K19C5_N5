@@ -43,9 +43,15 @@ export default function CheckoutPage() {
     phone: '',
     payment: '',
   })
-  const [errors, setErrors]       = useState({})
-const [expired, setExpired] = useState(() => !!hold && new Date(hold.expiresAt).getTime() <= getServerNow()) 
- const [submitted, setSubmitted] = useState(false)
+  const [errors, setErrors] = useState({})
+  const [expired, setExpired] = useState(() => {
+    if (!hold) return false
+    const deadline = Date.parse(hold.expiresAt)
+    if (!Number.isFinite(deadline)) return false
+    const now = hold.serverOffsetMs !== undefined ? Date.now() + (hold.serverOffsetMs || 0) : getServerNow()
+    return deadline <= now
+  })
+  const [submitted, setSubmitted] = useState(false)
 
   const setField = (e) => {
     const { name, value } = e.target
@@ -144,7 +150,11 @@ const [expired, setExpired] = useState(() => !!hold && new Date(hold.expiresAt).
           {/* Summary */}
           <div className="md:col-span-2">
             <div className="card-auth sticky top-20 space-y-4">
-              <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={() => setExpired(true)} />
+              <SeatHoldTimer
+                expiresAt={hold.expiresAt}
+                serverOffsetMs={hold.serverOffsetMs || 0}
+                onExpire={() => setExpired(true)}
+              />
               <h2 className="font-semibold text-gray-900">Tóm tắt đơn hàng</h2>
               <div className="space-y-3 text-sm text-gray-600">
                 <div>

@@ -7,7 +7,7 @@
  */
 const ITEMS = [
   { label: 'Còn trống', symbol: '○', className: 'bg-emerald-50 border-emerald-400 text-emerald-700' },
-  { label: 'Đang chọn', symbol: '✓', className: 'bg-pink-600 border-pink-600 text-white font-bold' },
+  { label: 'Bạn đang giữ', symbol: '✓', className: 'bg-pink-600 border-pink-600 text-white font-bold' },
   { label: 'Đang có người giữ', symbol: '⏳', className: 'bg-amber-100 border-amber-400 text-amber-800' },
   { label: 'Đã bán', symbol: '✕', className: 'bg-gray-200 border-gray-300 text-gray-500' },
 ]
@@ -30,4 +30,3 @@ export default function SeatLegend() {
     </div>
   )
 }
-

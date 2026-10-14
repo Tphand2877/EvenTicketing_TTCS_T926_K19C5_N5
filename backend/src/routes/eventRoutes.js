@@ -36,7 +36,10 @@ const {
   validateSeatHold,
   validateSeatMap,
   validateCategoryPrices,
+  validateSeatIdList,
+  validateSeatReleaseParams,
 } = require('../middleware/validateMiddleware');
+const seatSpecificHoldController = require('../controllers/seatSpecificHoldController');
 
 const MANAGERS = { roles: ['organizer', 'admin'] };
 
@@ -63,6 +66,14 @@ showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
 showtimeRouter.get('/:id/categories', { public: true }, getShowtimeCategories);
 showtimeRouter.put('/:id/categories/prices', MANAGERS, validateCategoryPrices, updateCategoryPrices);
 showtimeRouter.put('/:id/pricing', MANAGERS, validateCategoryPrices, updateCategoryPrices);
+showtimeRouter.get('/:id/server-time', { public: true }, seatSpecificHoldController.getServerTime);
+showtimeRouter.post('/:id/seat-holds', { authenticated: true }, validateSeatIdList, seatSpecificHoldController.holdSeats);
+showtimeRouter.delete(
+  '/:id/seat-holds/:holdId/seats/:seatId',
+  { authenticated: true },
+  validateSeatReleaseParams,
+  seatSpecificHoldController.releaseSeat
+);
 showtimeRouter.get('/:id', { public: true }, getPublicShowtime);
 showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
 showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);

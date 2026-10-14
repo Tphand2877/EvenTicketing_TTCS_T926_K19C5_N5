@@ -52,14 +52,15 @@ or expose equivalent read views; do not create a second competing write model.
 | `showtimes` | existing fields plus enum `status`: `draft`, `on_sale`, `closed` |
 | `seat_categories` | `id,showtime_id,name`; optional numeric `price` from S-15 (missing/null means unknown price) |
 | `seats` | `id,showtime_id,row_label,seat_number,category_id` |
-| `public_seat_holds` read view | `showtime_id,seat_id,status,expires_at`; active / pending_payment / confirmed / cancelled |
+| `public_seat_holds` read view | `showtime_id,seat_id,status,expires_at`; supplied by the S-10 T-22 migration from `seat_hold_seats` + `seat_holds` |
 | `public_sold_seats` read view | `showtime_id,seat_id`; only currently sold tickets |
 
 T-19 explicitly permits simulated hold/ticket sources and ready join points.
-The two read views are those join points. Their owners connect the actual
-per-seat records when T-22/ticket features land. The quantity-only hold table in
-PR #22 has no seat IDs and cannot reliably supply this map: do not invent seat
-IDs or distribute held quantities across arbitrary seats.
+T-22 now supplies `public_seat_holds` from concrete seat mappings and shared hold
+sessions. The quantity-only hold rows in PR #22 still have no seat IDs and are
+not copied into this view: do not invent seat IDs or distribute held quantities
+across arbitrary seats. A ticket owner must still connect `public_sold_seats` to
+the real sold-ticket source.
 
 This PR deliberately does **not** install empty production views: they would
 incorrectly mark held/sold seats available. Missing tables/columns/views return

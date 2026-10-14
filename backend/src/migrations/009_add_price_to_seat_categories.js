@@ -17,13 +17,13 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
+  await knex.raw('ALTER TABLE seat_holds DROP CONSTRAINT IF EXISTS seat_holds_price_non_negative');
   await knex.schema.alterTable('seat_holds', (table) => {
-    table.dropCheck('seat_holds_price_non_negative');
     table.dropColumn('price');
   });
 
+  await knex.raw('ALTER TABLE seat_categories DROP CONSTRAINT IF EXISTS seat_categories_price_non_negative');
   await knex.schema.alterTable('seat_categories', (table) => {
-    table.dropCheck('seat_categories_price_non_negative');
     table.dropColumn('price');
   });
 };
