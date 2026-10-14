@@ -3,7 +3,7 @@ const { PaymentServiceError } = require('../services/paymentService');
 const ERROR_RESPONSES = {
   INVALID_ORDER_ID: [400, 'Mã đơn hàng không hợp lệ.'],
   ORDER_NOT_FOUND: [404, 'Không tìm thấy đơn hàng.'],
-  ORDER_FORBIDDEN: [403, 'Bạn không có quyền thanh toán đơn hàng này.'],
+  ORDER_FORBIDDEN: [403, 'Bạn không có quyền xem hoặc thanh toán đơn hàng này.'],
   ORDER_ALREADY_PAID: [409, 'Đơn hàng đã được thanh toán.'],
   ORDER_NOT_PAYABLE: [409, 'Đơn hàng hiện không thể thanh toán.'],
   ORDER_EXPIRED: [409, 'Đơn hàng đã hết hạn thanh toán.'],
@@ -74,8 +74,54 @@ const createPaymentStatusController = ({ paymentService }) => async (req, res) =
   }
 };
 
+const createOrderSummaryController = ({ paymentService }) => async (req, res) => {
+  try {
+    const order = await paymentService.getOrderSummary({
+      orderId: req.params.orderId,
+      userId: req.user.userId,
+    });
+    return res.status(200).json({ success: true, data: { order } });
+  } catch (error) {
+    return sendPaymentError(error, req, res);
+  }
+};
+
+const createOrderController = ({ orders = require('../models/Order') } = {}) => async (req, res, next) => {
+  try {
+    const { holdId } = req.body;
+    if (!holdId) {
+      return res.status(400).json({ success: false, message: 'Thiếu mã giữ chỗ (holdId).' });
+    }
+    // T-38: Máy chủ tự tính tổng tiền từ giá hạng ghế và bỏ qua bất kỳ số tiền nào gửi từ trình duyệt
+    const order = await orders.createOrderFromHold({
+      holdId,
+      userId: req.user.userId,
+      now: new Date(),
+    });
+    return res.status(201).json({
+      success: true,
+      message: 'Tạo đơn hàng thành công.',
+      data: { order },
+    });
+  } catch (error) {
+    if (error.code === 'HOLD_NOT_FOUND') {
+      return res.status(404).json({ success: false, code: error.code, message: error.message });
+    }
+    if (error.code === 'HOLD_FORBIDDEN') {
+      return res.status(403).json({ success: false, code: error.code, message: error.message });
+    }
+    if (error.code === 'HOLD_EXPIRED') {
+      return res.status(409).json({ success: false, code: error.code, message: error.message });
+    }
+    return next(error);
+  }
+};
+
 module.exports = {
   ERROR_RESPONSES,
   createPaymentController,
   createPaymentStatusController,
+  createOrderSummaryController,
+  createOrderController,
 };
+

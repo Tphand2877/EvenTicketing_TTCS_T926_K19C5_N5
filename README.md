@@ -580,4 +580,17 @@ adapters must be connected before these new endpoints are available on staging.
     - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
     - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
 
+## 🛒 Xem lại chi tiết đơn trước khi thanh toán (SCRUM-192 / S-17)
+
+* **User Story:** Là người mua vé tôi muốn thấy rõ từng ghế, hạng, đơn giá và tổng tiền trước khi trả để không trả nhầm cho ghế mình không muốn.
+* **Sub-tasks:**
+  - **T-38**: Tính tổng tiền ở máy chủ từ giá hạng ghế, không tin số từ trình duyệt (`POST /api/payments/orders`):
+    - Đơn hàng được tạo từ lượt giữ ghế (`seat_hold`), máy chủ tự truy vấn giá từng ghế theo hạng vé trong database và cộng tổng.
+    - Mọi trường tổng tiền hoặc giá truyền từ trình duyệt đều bị bỏ qua (AC2).
+  - **T-39**: Trang tóm tắt đơn: ghế, hạng, đơn giá, tổng tiền, thời gian còn lại (`GET /api/payments/orders/:orderId/summary` & `CheckoutPage`):
+    - **AC1:** Khi mở trang đơn, hiển thị tên sự kiện, suất diễn, danh sách từng ghế kèm hạng và đơn giá, tổng tiền và đồng hồ đếm ngược thời gian còn lại.
+    - **AC3:** Khi thời hạn thanh toán đã hết, giao diện thông báo *"Đơn hàng đã hết hạn thanh toán"* và nút thanh toán bị ẩn hoàn toàn.
+    - **NFR:** Bảo vệ quyền riêng tư: chỉ chủ đơn (authenticated buyer sở hữu đơn hàng) mới xem được chi tiết đơn (HTTP 403 Forbidden nếu truy cập đơn của người khác).
+
+
 

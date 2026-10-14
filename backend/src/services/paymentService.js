@@ -298,8 +298,52 @@ const createPaymentService = ({
       const provider = getPaymentProvider(env);
       return responseForStoredOrder(order, provider);
     },
+
+    /**
+     * T-39 / S-17: Lấy tóm tắt chi tiết đơn hàng (sự kiện, suất, từng ghế kèm hạng và đơn giá, tổng tiền, thời gian còn lại)
+     */
+    async getOrderSummary({ orderId, userId }) {
+      if (typeof orderId !== 'string' || orderId.length > 128 || !ORDER_ID_PATTERN.test(orderId)) {
+        throw new PaymentServiceError('INVALID_ORDER_ID', 'Mã đơn hàng không hợp lệ.');
+      }
+
+      // getOrderDetails có thể do orders (Order model) cung cấp
+      const order = orders.getOrderDetails
+        ? await orders.getOrderDetails(orderId)
+        : await orders.findById(orderId);
+
+      if (!order) throw new PaymentServiceError('ORDER_NOT_FOUND', 'Không tìm thấy đơn hàng.');
+      if (String(order.user_id) !== String(userId)) {
+        throw new PaymentServiceError('ORDER_FORBIDDEN', 'Bạn không có quyền xem đơn hàng này.');
+      }
+
+      const databaseNow = order.database_now ? new Date(order.database_now) : now();
+      const expiresAt = new Date(order.expires_at).getTime();
+      const isExpired = !Number.isFinite(expiresAt) || expiresAt <= new Date(databaseNow).getTime();
+
+      return {
+        id: order.id,
+        status: isExpired && order.status === 'pending' ? 'expired' : order.status,
+        is_expired: isExpired || order.status === 'expired',
+        total_amount: order.total_amount,
+        currency: order.currency,
+        expires_at: order.expires_at,
+        server_now: databaseNow.toISOString(),
+        event: order.event || null,
+        showtime: order.showtime || null,
+        items: (order.items || []).map((item) => ({
+          id: item.id,
+          seat_id: item.seat_id,
+          row: item.row_label,
+          number: item.seat_number,
+          category_name: item.category_name,
+          unit_price: item.unit_price,
+        })),
+      };
+    },
   };
 };
+
 
 module.exports = {
   ORDER_ID_PATTERN,
