@@ -45,7 +45,7 @@ const createPaymentService = ({
     }
   };
 
-  const findOwnedPendingOrder = async ({ orderId, userId }) => {
+  const findOwnedOrder = async ({ orderId, userId }) => {
     if (typeof orderId !== 'string' || orderId.length > 128 || !ORDER_ID_PATTERN.test(orderId)) {
       throw new PaymentServiceError('INVALID_ORDER_ID', 'Mã đơn hàng không hợp lệ.');
     }
@@ -55,6 +55,11 @@ const createPaymentService = ({
     if (String(order.user_id) !== String(userId)) {
       throw new PaymentServiceError('ORDER_FORBIDDEN', 'Bạn không có quyền xem hoặc thanh toán đơn hàng này.');
     }
+    return order;
+  };
+
+  const findOwnedPendingOrder = async ({ orderId, userId }) => {
+    const order = await findOwnedOrder({ orderId, userId });
     if (order.status === 'expired') {
       throw new PaymentServiceError('ORDER_EXPIRED', 'Đơn hàng đã hết hạn thanh toán.');
     }
@@ -142,6 +147,12 @@ const createPaymentService = ({
 
   const responseForStoredOrder = async (order, provider) => {
     assertSameClaim(order, provider);
+    if (order.gateway_result_status === 'failed') {
+      return { status: 'failed', orderId: order.id };
+    }
+    if (order.gateway_result_status === 'pending') {
+      return { status: 'processing', orderId: order.id, retryAfterSeconds: PROCESSING_RETRY_AFTER_SECONDS };
+    }
     return resolveClaimState(order);
   };
 
@@ -259,7 +270,28 @@ const createPaymentService = ({
     },
 
     async getPaymentStatus({ orderId, userId }) {
-      const order = await findOwnedPendingOrder({ orderId, userId });
+      const order = await findOwnedOrder({ orderId, userId });
+      const databaseNow = order.database_now ? new Date(order.database_now) : now();
+      const expiresAt = new Date(order.expires_at).getTime();
+      const expired = !Number.isFinite(expiresAt) || expiresAt <= new Date(databaseNow).getTime();
+
+      if (order.status === 'paid') return { status: 'paid', orderId: order.id };
+      if (order.status === 'needs_review') {
+        return { status: 'needs_review', orderId: order.id, gatewayRequestId: order.gateway_request_id };
+      }
+      if (order.status === 'cancelled') return { status: 'cancelled', orderId: order.id };
+      if (order.status === 'expired' || expired) return { status: 'expired', orderId: order.id };
+      if (order.status !== 'pending') {
+        throw new PaymentServiceError('ORDER_NOT_PAYABLE', 'Đơn hàng hiện không thể thanh toán.');
+      }
+
+      if (order.gateway_result_status === 'failed') {
+        return { status: 'failed', orderId: order.id };
+      }
+      if (order.gateway_result_status === 'pending') {
+        return { status: 'processing', orderId: order.id, retryAfterSeconds: PROCESSING_RETRY_AFTER_SECONDS };
+      }
+
       if (!order.gateway_request_id && !order.gateway_provider) {
         return { status: 'not_started', orderId: order.id };
       }

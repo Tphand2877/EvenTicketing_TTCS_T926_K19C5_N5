@@ -55,6 +55,13 @@ const createPublicShowtimeRepository = (database) => ({
       ), sold AS (
         SELECT DISTINCT v.seat_id FROM public_sold_seats v
         JOIN target t ON t.id = v.showtime_id AND t.on_sale
+        UNION
+        SELECT allocation.seat_id
+        FROM orders payment_order
+        JOIN order_items allocation ON allocation.order_id = payment_order.id
+        JOIN seats allocated_seat ON allocated_seat.id = allocation.seat_id
+        JOIN target t ON t.id = allocated_seat.showtime_id AND t.on_sale
+        WHERE payment_order.status = 'paid' AND allocation.released_at IS NULL
       ), states AS (
         SELECT s.id, s.row_label AS row, s.seat_number AS number,
           s.category_id, c.name AS category, (to_jsonb(c)->>'price')::numeric AS price,

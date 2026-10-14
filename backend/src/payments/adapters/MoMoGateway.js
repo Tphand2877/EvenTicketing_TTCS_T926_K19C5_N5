@@ -220,6 +220,7 @@ const createMoMoGateway = ({ config, fetchImpl = globalThis.fetch }) => {
       return {
         providerEventId: transactionId || fallbackEventId,
         orderId: payload.orderId,
+        gatewayRequestId: payload.requestId,
         gatewayTransactionId: transactionId,
         amountMinor: Number(payload.amount),
         currency: 'VND',

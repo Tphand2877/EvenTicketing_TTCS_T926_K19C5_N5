@@ -17,6 +17,7 @@
  * @typedef {object} PaymentResult
  * @property {string} providerEventId Stable provider event ID for duplicate detection.
  * @property {string} orderId Merchant order ID.
+ * @property {string} gatewayRequestId Provider request ID correlated to the merchant order.
  * @property {string|null} gatewayTransactionId Provider transaction ID; null for results without one.
  * @property {number} amountMinor Integer amount in the currency's smallest unit.
  * @property {string} currency ISO 4217 currency code.

@@ -142,6 +142,66 @@ test('GET payment status recovers a persisted redirect URL after reload', async 
   expect(gateway.createPayment).not.toHaveBeenCalled();
 });
 
+test('return query parameters cannot claim payment success', async () => {
+  const response = await request(app)
+    .get(`/api/payments/orders/${ORDER_ID}?status=success&resultCode=0&transId=forged`)
+    .set('Authorization', auth);
+
+  expect(response.status).toBe(200);
+  expect(response.body.data.payment).toEqual({ status: 'not_started', orderId: ORDER_ID });
+  expect(gateway.createPayment).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['paid', 'paid'],
+  ['needs_review', 'needs_review'],
+  ['expired', 'expired'],
+  ['cancelled', 'cancelled'],
+])('GET payment status exposes persisted %s state to the return page', async (orderStatus, expectedStatus) => {
+  orders.findById.mockResolvedValueOnce({
+    ...orderFixture,
+    status: orderStatus,
+  });
+
+  const response = await request(app)
+    .get(`/api/payments/orders/${ORDER_ID}`)
+    .set('Authorization', auth);
+
+  expect(response.status).toBe(200);
+  expect(response.body.data.payment.status).toBe(expectedStatus);
+  expect(gateway.createPayment).not.toHaveBeenCalled();
+});
+
+test.each([
+  {
+    gatewayResult: "failed",
+    expectedStatus: "failed",
+    expectedHttpStatus: 200
+  },
+  {
+    gatewayResult: "pending",
+    expectedStatus: "processing",
+    expectedHttpStatus: 202
+  }
+])('GET payment status reports a persisted gateway $gatewayResult result', async ({gatewayResult: gatewayResultStatus,
+  expectedStatus,
+  expectedHttpStatus})  => {
+  orders.findById.mockResolvedValueOnce({
+    ...orderFixture,
+    gateway_provider: 'momo',
+    gateway_request_id: ORDER_ID,
+    gateway_result_status: gatewayResultStatus,
+  });
+
+  const response = await request(app)
+    .get(`/api/payments/orders/${ORDER_ID}`)
+    .set('Authorization', auth);
+
+  expect(response.status).toBe(expectedHttpStatus);
+  expect(response.body.data.payment.status).toBe(expectedStatus);
+  expect(gateway.createPayment).not.toHaveBeenCalled();
+});
+
 test('GET payment status returns a machine-readable reconciliation error for a stuck claim', async () => {
   orders.findById.mockResolvedValueOnce({
     ...orderFixture,

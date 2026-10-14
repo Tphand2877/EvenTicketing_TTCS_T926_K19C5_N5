@@ -15,6 +15,7 @@ const createFixture = (overrides = {}) => {
     updated_at: NOW,
     gateway_provider: null,
     gateway_request_id: null,
+    gateway_result_status: null,
     payment_url: null,
     payment_request_status: null,
     payment_request_started_at: null,
@@ -211,6 +212,34 @@ describe('T-41 payment request service', () => {
 
     await expect(service.getPaymentStatus({ orderId: ORDER_ID, userId: 7 }))
       .resolves.toEqual({ status: 'not_started', orderId: ORDER_ID });
+    expect(gateway.createPayment).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['failed', { status: 'failed', orderId: ORDER_ID }],
+    ['pending', { status: 'processing', orderId: ORDER_ID, retryAfterSeconds: 3 }],
+  ])('status lookup reports the verified gateway %s result without recreating payment', async (gatewayResultStatus, expected) => {
+    const { gateway, service } = createFixture({
+      gateway_provider: 'momo',
+      gateway_request_id: ORDER_ID,
+      gateway_result_status: gatewayResultStatus,
+    });
+
+    await expect(service.getPaymentStatus({ orderId: ORDER_ID, userId: 7 })).resolves.toEqual(expected);
+    expect(gateway.createPayment).not.toHaveBeenCalled();
+  });
+
+  test('pay retry after a failed gateway result never returns the old URL or calls the gateway again', async () => {
+    const { gateway, service } = createFixture({
+      gateway_provider: 'momo',
+      gateway_request_id: ORDER_ID,
+      gateway_result_status: 'failed',
+      payment_request_status: 'ready',
+      payment_url: 'https://test-payment.momo.vn/v2/gateway/pay?token=old',
+    });
+
+    await expect(service.createPayment({ orderId: ORDER_ID, userId: 7 }))
+      .resolves.toEqual({ status: 'failed', orderId: ORDER_ID });
     expect(gateway.createPayment).not.toHaveBeenCalled();
   });
 

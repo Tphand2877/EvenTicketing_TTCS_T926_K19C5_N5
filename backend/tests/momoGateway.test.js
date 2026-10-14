@@ -140,6 +140,7 @@ describe('MoMo sandbox adapter (T-40)', () => {
     await expect(gateway.readResult(verified)).resolves.toEqual({
       providerEventId: '123456789',
       orderId: ORDER_ID,
+      gatewayRequestId: ORDER_ID,
       gatewayTransactionId: '123456789',
       amountMinor: 150000,
       currency: 'VND',

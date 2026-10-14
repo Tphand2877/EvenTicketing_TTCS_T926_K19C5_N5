@@ -14,7 +14,15 @@ const app = express();
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+  limit: '5mb',
+  verify(req, _res, buffer) {
+    // S-20's webhook route needs the exact signed bytes after this shared parser runs.
+    if (req.path.startsWith('/api/payments/') && /\/webhooks?\/?$/.test(req.path)) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
