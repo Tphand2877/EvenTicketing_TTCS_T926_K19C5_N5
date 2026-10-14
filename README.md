@@ -517,4 +517,40 @@ adapters must be connected before these new endpoints are available on staging.
     - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
     - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
 
+---
+
+## 🔐 13. S-21: Webhook có chữ ký sai bị từ chối (SCRUM-212 / T-48, T-49)
+
+> **Story:** `[S-21]` Webhook có chữ ký sai bị từ chối  
+> **Epic:** `[E-05]` Payments & Orders  
+> **Phân loại:** MoSCoW-Must | Sprint-3 | Tier-Ready  
+
+### 📌 Chi tiết các Sub-tasks đã hoàn thành:
+
+* **[T-48] Kiểm chữ ký webhook trước khi đọc nội dung (SCRUM-213):**
+  - Endpoint tiếp nhận: `POST /api/payments/webhook` (và alias `/payments/webhook`).
+  - Sử dụng middleware `verifyWebhookSignature` gắn với `express.raw({ type: '*/*' })` được mount **TRƯỚC** `express.json()` toàn cục.
+  - Kiểm tra sự tồn tại của header `X-Signature`. Nếu thiếu hoặc chữ ký không khớp với HMAC-SHA256 của raw buffer:
+    - Lập tức từ chối với HTTP `401 Unauthorized` (`Thiếu chữ ký webhook.` hoặc `Chữ ký webhook không hợp lệ.`).
+    - **TUYỆT ĐỐI không đọc hoặc parse nội dung JSON**, ngăn ngừa hoàn toàn nguy cơ khai thác payload độc hại trước khi xác thực nguồn gốc.
+  - Sử dụng thuật toán so sánh an toàn `crypto.timingSafeEqual` để kháng tấn công trích xuất chữ ký qua độ trễ thời gian (Timing Attacks).
+  - Hỗ trợ cả định dạng hex thô (Mock Gateway) và tiền tố chuẩn quốc tế `sha256=` (GitHub, Stripe).
+  - Chỉ khi chữ ký hợp lệ, server mới tiến hành parse JSON từ buffer vào `req.body` và bàn giao cho `paymentController`.
+
+* **[T-49] Ghi log lần từ chối kèm địa chỉ nguồn (SCRUM-214):**
+  - Mọi lượt truy vấn webhook bị từ chối (401) đều được tự động ghi nhận đầy đủ thông tin:
+    - **Địa chỉ nguồn (Source IP):** Trích xuất ưu tiên từ header `X-Forwarded-For` (hỗ trợ Nginx / Docker / Cloudflare proxy) hoặc connection socket.
+    - **Lý do từ chối (Reason):** Ghi rõ `Thiếu chữ ký webhook (header X-Signature)` hoặc `Chữ ký webhook không hợp lệ`.
+    - **Thời điểm (Timestamp):** Chuẩn ISO 8601 UTC.
+    - **Mã phản hồi & Endpoint:** `401` tại `POST /api/payments/webhook`.
+  - Dữ liệu từ chối được lưu trữ kép:
+    - Bảng `audit_logs` trong cơ sở dữ liệu PostgreSQL.
+    - Tệp nhật ký `logs/audit.log` (best-effort, không làm crash request).
+    - Cảnh báo có cấu trúc ra console: `[Webhook Rejected] ... - IP: ... - Status: 401 - Reason: ...`.
+
+### 🧪 Kiểm thử tự động:
+- Bộ kiểm thử toàn diện: `backend/tests/webhookSignature.test.js` (14/14 test cases Passed 100%).
+- Bao phủ đầy đủ các kịch bản: từ chối khi thiếu signature, từ chối khi chữ ký sai, body hỏng kèm chữ ký sai vẫn trả 401 (chứng minh không đọc nội dung trước), ghi log kèm IP nguồn qua X-Forwarded-For, xác thực thành công 200, và kháng timing attacks.
+
+
 

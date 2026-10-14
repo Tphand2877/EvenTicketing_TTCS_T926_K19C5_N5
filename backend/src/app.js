@@ -5,20 +5,28 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
+const { paymentRouter } = require('./routes/paymentRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
-// 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
 // Mount TRƯỚC routes để bắt được cả các route bị chặn bởi deny-by-default (T-08)
 app.use(auditAccessDenials);
+
+// ─── SCRUM-212 [S-21 (T-48, T-49)]: Webhook thanh toán ──────────────────────
+// Mount TRƯỚC express.json() để kiểm tra chữ ký trên raw stream trước khi đọc/parse nội dung JSON
+app.use('/api/payments', paymentRouter);
+app.use('/payments', paymentRouter);
+
+// 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
