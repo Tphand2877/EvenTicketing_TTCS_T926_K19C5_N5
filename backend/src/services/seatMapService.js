@@ -26,6 +26,20 @@ const relationExists = async (trx, name) => {
   return rows[0].present;
 };
 
+const isForeignKeyViolation = (error) => {
+  const pending = [error];
+  const seen = new Set();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+    if (current.code === '23503' || current.sqlState === '23503'
+      || /violates foreign key constraint/i.test(current.message || '')) return true;
+    pending.push(current.cause, current.originalError, current.nativeError, current.original);
+  }
+  return false;
+};
+
 const findBlockingReason = async (trx, showtimeId) => {
   if (await relationExists(trx, 'seat_holds')) {
     const { rows } = await trx.raw(`
@@ -50,6 +64,29 @@ const findBlockingReason = async (trx, showtimeId) => {
       .first();
     if (held) return 'Suất diễn đang có ghế được giữ hoặc đã bán.';
   }
+  // T-36/T-42 keeps each seat allocation in order_items after payment. The
+  // allocation, rather than the order or hold row, is the durable seat claim.
+  // Check these relations independently so legacy schemas without Orders keep
+  // the previous Seat Hold behavior.
+  if (await relationExists(trx, 'order_items') && await relationExists(trx, 'seats')) {
+    const allocation = await trx('order_items as allocation')
+      .join('seats as seat', 'seat.id', 'allocation.seat_id')
+      .where('seat.showtime_id', showtimeId)
+      .whereNull('allocation.released_at')
+      .first('allocation.id');
+    if (allocation) return 'Suất diễn có ghế đã được phân bổ cho đơn hàng.';
+
+    // Released allocations still retain their seat_id FK for order history.
+    // Report the existing lock contract before DELETE reaches PostgreSQL's FK.
+    const historicalAllocation = await trx('order_items as allocation')
+      .join('seats as seat', 'seat.id', 'allocation.seat_id')
+      .where('seat.showtime_id', showtimeId)
+      .whereNotNull('allocation.released_at')
+      .first('allocation.id');
+    if (historicalAllocation) {
+      return 'Một hoặc nhiều ghế đang được dữ liệu hiện có tham chiếu.';
+    }
+  }
   return null;
 };
 
@@ -68,8 +105,20 @@ const createSeatMapService = (database = db) => ({
       const reason = await findBlockingReason(trx, showtimeId);
       if (reason) throw new SeatMapError('SEAT_MAP_LOCKED', `Không thể thay sơ đồ ghế: ${reason}`);
 
-      // AC2: thay toàn bộ sơ đồ cũ
-      const replacedSeatCount = await trx('seats').where({ showtime_id: showtimeId }).del();
+      // AC2: thay toàn bộ sơ đồ cũ. A concurrent order_items insert can
+      // commit after the blocker SELECT; the FK's ON DELETE RESTRICT remains
+      // the database-level guard. Translate that conflict to the same API
+      // contract and let the transaction roll back every map change.
+      let replacedSeatCount;
+      try {
+        replacedSeatCount = await trx('seats').where({ showtime_id: showtimeId }).del();
+      } catch (error) {
+        if (isForeignKeyViolation(error)) {
+          throw new SeatMapError('SEAT_MAP_LOCKED',
+            'Không thể thay sơ đồ ghế: một hoặc nhiều ghế đang được dữ liệu hiện có tham chiếu.');
+        }
+        throw error;
+      }
 
       // AC1: tạo các hạng ghế chưa có (giữ nguyên hạng đã có, vd. giá do S-15 đặt)
       const names = [...new Set(seats.map((s) => s.category))];
