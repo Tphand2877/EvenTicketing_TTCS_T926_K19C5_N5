@@ -387,6 +387,34 @@ Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, 
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
+## S-18 / T-40: MoMo payment gateway adapter
+
+Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
+`captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
+gateway factory. The adapter signs create requests, verifies MoMo's signed
+create response and IPN payload, and normalizes verified results. Repeated
+payment requests for one order reuse the order ID as MoMo's `requestId`.
+Requests explicitly enable MoMo's one-step `autoCapture`; result codes `0` and
+`9000` normalize as success, while `1000`, `7000`, and `7002` stay pending.
+
+Configure these variables in the repository `.env` for Docker Compose, or in
+`backend/.env` for a direct backend run:
+
+| Variable | Purpose |
+| --- | --- |
+| `PAYMENT_PROVIDER` | Adapter selector; currently `momo` |
+| `MOMO_PARTNER_CODE` | MoMo merchant partner code |
+| `MOMO_ACCESS_KEY` | MoMo access key |
+| `MOMO_SECRET_KEY` | MoMo signing secret; keep it server-side and out of source control |
+| `MOMO_API_BASE_URL` | Defaults to MoMo sandbox `https://test-payment.momo.vn` |
+| `MOMO_REDIRECT_URL` | Buyer return URL after leaving MoMo |
+| `MOMO_IPN_URL` | Public server endpoint that receives MoMo payment notifications |
+
+The IPN URL must be reachable by MoMo. For local testing, use an HTTPS tunnel
+and set its callback URL. Production requires HTTPS callback and return URLs.
+The payment endpoint and webhook route are added in the dependent T-41/T-42
+work; these T-40 changes provide their adapter and configuration boundary.
+
 ## 9. S-05: Nạp sơ đồ ghế từ tệp JSON (T-11, T-12)
 
 **T-11:** migration `007` tạo bảng `seat_categories` (hạng ghế theo từng suất diễn,
