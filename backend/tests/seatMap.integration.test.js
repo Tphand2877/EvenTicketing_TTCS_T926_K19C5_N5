@@ -10,15 +10,31 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const config = require('../knexfile').test;
 
+const databaseTestsEnabled = process.env.RUN_SEAT_MAP_DB_TESTS === '1';
+const testDatabaseName = process.env.DB_NAME_TEST?.trim();
+const configuredDatabaseName = process.env.DB_NAME?.trim() || 'eventticketing';
+if (databaseTestsEnabled && (!testDatabaseName
+  || testDatabaseName === configuredDatabaseName
+  || testDatabaseName === 'eventticketing')) {
+  throw new Error('Set DB_NAME_TEST to a separate disposable PostgreSQL database before enabling Seat Map DB tests.');
+}
+
 const schema = `s05_test_${process.pid}_${crypto.randomBytes(4).toString('hex')}`;
-const mockDatabase = knex({ ...config, searchPath: [schema], pool: { min: 0, max: 8 } });
+const mockDatabase = knex({
+  ...config,
+  connection: { ...config.connection, database: testDatabaseName || 'eventticketing_test' },
+  searchPath: [schema],
+  pool: { min: 0, max: 8 },
+});
 jest.mock('../src/config/database', () => mockDatabase);
 jest.mock('../src/models/AuditLog', () => ({ create: jest.fn().mockResolvedValue(1) }));
 
 const app = require('../src/app');
 const seatHoldService = require('../src/services/seatHoldService');
+const { createPaymentResultRepository } = require('../src/repositories/paymentResultRepository');
+const { createPaymentResultService } = require('../src/services/paymentResultService');
 
-const describeDatabase = process.env.RUN_SEAT_MAP_DB_TESTS === '1' ? describe : describe.skip;
+const describeDatabase = databaseTestsEnabled ? describe : describe.skip;
 const ORGANIZER = `Bearer ${jwt.sign({ userId: 1, role: 'organizer' }, process.env.JWT_SECRET)}`;
 const SHOWTIME = 1;
 
@@ -33,6 +49,28 @@ const upload = (seats, id = SHOWTIME) =>
   request(app).put(`/api/showtimes/${id}/seat-map`).set('Authorization', ORGANIZER).send({ seats });
 const seatCount = (id = SHOWTIME) => mockDatabase('seats').where({ showtime_id: id }).count({ n: '*' }).first().then((r) => Number(r.n));
 const categoryNames = (id = SHOWTIME) => mockDatabase('seat_categories').where({ showtime_id: id }).orderBy('name').pluck('name');
+
+const createOrderAllocation = async ({ status, releasedAt = null, showtimeId = SHOWTIME }) => {
+  const id = crypto.randomUUID();
+  const seat = await mockDatabase('seats').where({ showtime_id: showtimeId }).first('id');
+  if (!seat) throw new Error(`Test fixture has no seat for showtime ${showtimeId}.`);
+  await mockDatabase('orders').insert({
+    id,
+    user_id: 2,
+    status,
+    total_amount: 275000,
+    currency: 'VND',
+    expires_at: '2099-01-01T00:00:00.000Z',
+  });
+  await mockDatabase('order_items').insert({
+    order_id: id,
+    seat_id: seat.id,
+    category_name: 'VIP',
+    unit_price: 275000,
+    released_at: releasedAt,
+  });
+  return { id, seatId: seat.id };
+};
 
 describeDatabase('S-05: nạp sơ đồ ghế trên PostgreSQL', () => {
   beforeAll(async () => {
@@ -52,6 +90,8 @@ describeDatabase('S-05: nạp sơ đồ ghế trên PostgreSQL', () => {
 
   beforeEach(async () => {
     await mockDatabase('seat_holds').del();
+    await mockDatabase('order_items').del();
+    await mockDatabase('orders').del();
     await mockDatabase('seats').del();
     await mockDatabase('seat_categories').del();
   });
@@ -139,6 +179,128 @@ describeDatabase('S-05: nạp sơ đồ ghế trên PostgreSQL', () => {
   test('AC3: giữ chỗ ở suất khác không ảnh hưởng', async () => {
     await seatHoldService.holdSeats({ showtimeId: 2, userId: 2, quantity: 1 });
     expect((await upload([{ row: 'A', number: 1, category: 'VIP' }])).status).toBe(200);
+  });
+
+  test('T-42: Paid Order vẫn khóa sơ đồ khi Seat Hold đã bị xóa', async () => {
+    await upload([{ row: 'A', number: 1, category: 'VIP' }]);
+    await createOrderAllocation({ status: 'paid' });
+
+    const res = await upload([{ row: 'B', number: 1, category: 'VIP' }]);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'SEAT_MAP_LOCKED' });
+    expect(await mockDatabase('seat_holds')).toHaveLength(0);
+    expect(await mockDatabase('seats').where({ showtime_id: SHOWTIME }).pluck('row_label')).toEqual(['A']);
+  });
+
+  test.each(['pending', 'needs_review'])(
+    'T-42: %s Order có allocation chưa release khóa sơ đồ',
+    async (status) => {
+      await upload([{ row: 'A', number: 1, category: 'VIP' }]);
+      await createOrderAllocation({ status });
+
+      const res = await upload([{ row: 'B', number: 1, category: 'VIP' }]);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('SEAT_MAP_LOCKED');
+      expect(await mockDatabase('seats').where({ showtime_id: SHOWTIME }).pluck('row_label')).toEqual(['A']);
+    },
+  );
+
+  test('T-42: Cancelled Order đã release không còn allocation đang hoạt động; FK vẫn bảo vệ tham chiếu lịch sử', async () => {
+    await upload([{ row: 'A', number: 1, category: 'VIP' }]);
+    await createOrderAllocation({ status: 'cancelled', releasedAt: new Date() });
+
+    const res = await upload([{ row: 'B', number: 1, category: 'VIP' }]);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'SEAT_MAP_LOCKED',
+      message: expect.stringContaining('dữ liệu hiện có tham chiếu'),
+    });
+    expect(await mockDatabase('seats').where({ showtime_id: SHOWTIME }).pluck('row_label')).toEqual(['A']);
+  });
+
+  test('T-42: allocation của suất khác không khóa sơ đồ và suất không có allocation vẫn thay được', async () => {
+    await upload([{ row: 'A', number: 1, category: 'VIP' }], 2);
+    await createOrderAllocation({ status: 'paid', showtimeId: 2 });
+
+    const res = await upload([{ row: 'B', number: 1, category: 'VIP' }]);
+    expect(res.status).toBe(200);
+    expect(await mockDatabase('seats').where({ showtime_id: SHOWTIME }).pluck('row_label')).toEqual(['B']);
+  });
+
+  test('T-42: thay sơ đồ đồng thời với xác nhận Paid vẫn giữ ghế đã phân bổ', async () => {
+    await upload([{ row: 'A', number: 1, category: 'VIP' }]);
+    const { id: orderId, seatId } = await createOrderAllocation({ status: 'pending' });
+    const holdId = crypto.randomUUID();
+    await mockDatabase('orders').where({ id: orderId }).update({
+      gateway_provider: 'momo',
+      gateway_request_id: orderId,
+    });
+    await mockDatabase('seat_holds').insert({
+      id: holdId,
+      showtime_id: SHOWTIME,
+      user_id: 2,
+      quantity: 1,
+      status: 'pending_payment',
+      order_id: orderId,
+      expires_at: '2099-01-01T00:00:00.000Z',
+    });
+
+    const baseRepository = createPaymentResultRepository(mockDatabase);
+    let signalOrderLocked;
+    let releasePayment;
+    const orderLocked = new Promise((resolve) => { signalOrderLocked = resolve; });
+    const paymentGate = new Promise((resolve) => { releasePayment = resolve; });
+    const repository = {
+      ...baseRepository,
+      withLockedOrder(args) {
+        return baseRepository.withLockedOrder({
+          ...args,
+          operation: async (context) => {
+            signalOrderLocked();
+            await paymentGate;
+            return args.operation(context);
+          },
+        });
+      },
+    };
+    const gateway = {
+      async verifyWebhook({ rawBody }) { return { payload: JSON.parse(rawBody.toString('utf8')) }; },
+      async readResult(webhook) { return webhook.payload; },
+    };
+    const paymentService = createPaymentResultService({
+      repository,
+      gatewayFactory: () => gateway,
+      env: { PAYMENT_PROVIDER: 'momo' },
+    });
+    const verified = await paymentService.verifyWebhook({
+      rawBody: Buffer.from(JSON.stringify({
+        providerEventId: crypto.randomUUID(),
+        orderId,
+        gatewayRequestId: orderId,
+        gatewayTransactionId: crypto.randomUUID(),
+        amountMinor: 275000,
+        currency: 'VND',
+        status: 'succeeded',
+        occurredAt: '2026-10-14T10:00:00.000Z',
+      })),
+    });
+    const payment = mockDatabase.transaction((trx) => paymentService.applyVerifiedResult(verified, { transaction: trx }));
+
+    try {
+      await orderLocked;
+      const res = await upload([{ row: 'B', number: 1, category: 'VIP' }]);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('SEAT_MAP_LOCKED');
+    } finally {
+      releasePayment();
+    }
+
+    await expect(payment).resolves.toMatchObject({ status: 'paid', orderId });
+    expect(await mockDatabase('orders').where({ id: orderId }).first('status')).toMatchObject({ status: 'paid' });
+    expect(await mockDatabase('seat_holds').where({ id: holdId })).toHaveLength(0);
+    expect(await mockDatabase('order_items').where({ order_id: orderId, seat_id: seatId }).first('released_at'))
+      .toMatchObject({ released_at: null });
+    expect(await mockDatabase('seats').where({ showtime_id: SHOWTIME }).pluck('row_label')).toEqual(['A']);
   });
 
   test('AC4: lỗi khi ghi ghế thứ 1.500 → không lưu ghế nào, sơ đồ cũ và hạng ghế giữ nguyên', async () => {

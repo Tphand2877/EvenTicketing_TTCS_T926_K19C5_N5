@@ -72,6 +72,8 @@ Schema owners should retain indexes on category/seat `showtime_id`, allocations
 `(showtime_id,seat_id)`, and catalog `(status,starts_at,id)`; ensure allocation seat
 IDs belong to the same showtime via constraints. Ticket views must exclude voided
 and refunded records. Pending-payment allocations must also feed the hold view.
+Paid S-18 orders are exposed as sold seats from unreleased order_items joined to
+orders with status paid, so a committed T-42 payment appears sold in the seat map.
 
 ## Redis and validation
 

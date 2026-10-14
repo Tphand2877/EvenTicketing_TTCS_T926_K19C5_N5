@@ -5,7 +5,9 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
-const { paymentRouter } = require('./routes/paymentRoutes');
+const { paymentRouter, rawWebhookParser } = require('./routes/paymentRoutes');
+const { verifyWebhookSignature } = require('./middleware/webhookSignatureMiddleware');
+const { handlePaymentWebhook } = require('./controllers/paymentController');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
@@ -21,17 +23,26 @@ app.use(auditAccessDenials);
 
 // ─── SCRUM-212 [S-21 (T-48, T-49)]: Webhook thanh toán ──────────────────────
 // Mount TRƯỚC express.json() để kiểm tra chữ ký trên raw stream trước khi đọc/parse nội dung JSON
-app.use('/api/payments', paymentRouter);
-app.use('/payments', paymentRouter);
+app.use('/api/payments/webhook', rawWebhookParser, verifyWebhookSignature, handlePaymentWebhook);
+app.use('/payments/webhook', rawWebhookParser, verifyWebhookSignature, handlePaymentWebhook);
 
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+  limit: '5mb',
+  verify(req, _res, buffer) {
+    // S-20's webhook route needs the exact signed bytes after this shared parser runs.
+    if (req.path.startsWith('/api/payments/') && /\/webhooks?\/?$/.test(req.path)) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
+app.use('/api/payments', paymentRouter);   // S-18 / T-41
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
