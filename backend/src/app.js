@@ -5,6 +5,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
+const { paymentRouter } = require('./routes/paymentRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
@@ -13,7 +14,15 @@ const app = express();
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+  limit: '5mb',
+  verify(req, _res, buffer) {
+    // S-20's webhook route needs the exact signed bytes after this shared parser runs.
+    if (req.path.startsWith('/api/payments/') && /\/webhooks?\/?$/.test(req.path)) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
@@ -24,6 +33,7 @@ app.use(auditAccessDenials);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
+app.use('/api/payments', paymentRouter);   // S-18 / T-41
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
