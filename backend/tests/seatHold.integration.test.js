@@ -40,16 +40,6 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
       { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
     await mockDatabase.raw(`
-      CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
-      ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'on_sale';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
       CREATE TABLE fixture_tickets (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL);
