@@ -61,6 +61,23 @@ const createShowtimeSaleService = (database = db) => ({
         if (rows[0].started) {
           throw new ShowtimeSaleError('SHOWTIME_STARTED', 'Suất diễn đã bắt đầu, không thể mở bán.');
         }
+
+        // S-15 / AC2: Chặn mở bán nếu có hạng ghế chưa có giá
+        const unpricedCategories = await trx('seat_categories')
+          .where({ showtime_id: showtimeId })
+          .where(function () {
+            this.whereNull('price').orWhere('price', '<', 0);
+          })
+          .orderBy('name', 'asc')
+          .select('name');
+
+        if (unpricedCategories.length > 0) {
+          const names = unpricedCategories.map((c) => c.name).join(', ');
+          throw new ShowtimeSaleError(
+            'CATEGORY_MISSING_PRICE',
+            `Hạng ghế "${names}" chưa có giá. Vui lòng đặt giá cho tất cả hạng ghế trước khi mở bán.`
+          );
+        }
       }
 
       const [updated] = await trx('showtimes').where({ id: showtimeId })

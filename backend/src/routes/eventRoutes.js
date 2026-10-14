@@ -27,13 +27,19 @@ const {
   openSales,
   closeSales,
   getStatusLog,
+  getShowtimeCategories,
+  updateCategoryPrices,
 } = require('../controllers/eventController');
 const {
   validateEvent,
   validateShowtime,
   validateSeatHold,
   validateSeatMap,
+  validateCategoryPrices,
+  validateSeatIdList,
+  validateSeatReleaseParams,
 } = require('../middleware/validateMiddleware');
+const seatSpecificHoldController = require('../controllers/seatSpecificHoldController');
 
 const MANAGERS = { roles: ['organizer', 'admin'] };
 
@@ -57,6 +63,17 @@ const { listOnSale, getPublicShowtime, getSeatMap } = require('../controllers/pu
 showtimeRouter.get('/', { public: true }, listOnSale);
 showtimeRouter.delete('/holds/:holdId', { authenticated: true }, releaseHold);
 showtimeRouter.get('/:id/seats', { public: true }, getSeatMap);
+showtimeRouter.get('/:id/categories', { public: true }, getShowtimeCategories);
+showtimeRouter.put('/:id/categories/prices', MANAGERS, validateCategoryPrices, updateCategoryPrices);
+showtimeRouter.put('/:id/pricing', MANAGERS, validateCategoryPrices, updateCategoryPrices);
+showtimeRouter.get('/:id/server-time', { public: true }, seatSpecificHoldController.getServerTime);
+showtimeRouter.post('/:id/seat-holds', { authenticated: true }, validateSeatIdList, seatSpecificHoldController.holdSeats);
+showtimeRouter.delete(
+  '/:id/seat-holds/:holdId/seats/:seatId',
+  { authenticated: true },
+  validateSeatReleaseParams,
+  seatSpecificHoldController.releaseSeat
+);
 showtimeRouter.get('/:id', { public: true }, getPublicShowtime);
 showtimeRouter.get('/:id/availability', { public: true }, getAvailability);
 showtimeRouter.post('/:id/holds', { authenticated: true }, validateSeatHold, holdSeats);
@@ -69,3 +86,4 @@ showtimeRouter.patch('/:id', MANAGERS, validateShowtime({ partial: true }), upda
 showtimeRouter.delete('/:id', MANAGERS, deleteShowtime);
 
 module.exports = { eventRouter, showtimeRouter };
+
