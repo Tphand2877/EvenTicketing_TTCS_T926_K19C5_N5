@@ -580,4 +580,8 @@ adapters must be connected before these new endpoints are available on staging.
     - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
     - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
 
+# T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
 
+Chỉ bổ sung `payment_events` và handler chống trùng gọi T-42 của team trong
+cùng transaction. Không bổ sung gateway, schema đơn hàng/thanh toán/vé hoặc
+kịch bản T-47. Xem [docs/T-45-T-46-webhook-receipts.md](docs/T-45-T-46-webhook-receipts.md).
