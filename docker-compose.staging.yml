@@ -31,6 +31,7 @@ services:
 
     environment:
       PORT: 3000
+      NODE_ENV: production
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
@@ -40,6 +41,13 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       SEAT_HOLD_TTL_SECONDS: ${SEAT_HOLD_TTL_SECONDS:-600}
       SEAT_HOLD_CLEANUP_INTERVAL_MS: ${SEAT_HOLD_CLEANUP_INTERVAL_MS:-30000}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-momo}
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-}
+      MOMO_API_BASE_URL: ${MOMO_API_BASE_URL:-https://test-payment.momo.vn}
+      MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-}
+      MOMO_IPN_URL: ${MOMO_IPN_URL:-}
 
     ports:
       - "3000:3000"
