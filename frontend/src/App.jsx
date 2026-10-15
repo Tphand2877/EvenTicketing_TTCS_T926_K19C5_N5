@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './routes/PrivateRoute'
-
+import PaymentResultPage from './pages/PaymentResultPage'
 // Pages
 import LoginPage       from './pages/LoginPage'
 import RegisterPage    from './pages/RegisterPage'
@@ -38,7 +38,10 @@ export default function App() {
           <Route path="/events"         element={<EventListPage />} />
           <Route path="/events/:id"     element={<EventDetailPage />} />
           <Route path="/showtimes/:id" element={<ShowtimeDetailPage />} />
-
+<Route
+  path="/payment-result"
+  element={<PaymentResultPage />}
+/>
           {/* ── Mock payment gateway (SCRUM-203, flag only) ──── */}
           {MOCK_GATEWAY_ENABLED && (
             <Route
