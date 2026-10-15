@@ -5,10 +5,12 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
-const { paymentRouter } = require('./routes/paymentRoutes');
+const { createPaymentRouter, paymentRouter } = require('./routes/paymentRoutes');
+const { createMockPaymentRouter } = require('./routes/mockPaymentRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
+const createApp = ({ paymentService, paymentResultService, paymentGateway, paymentProvider } = {}) => {
 const app = express();
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
@@ -33,7 +35,10 @@ app.use(auditAccessDenials);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
-app.use('/api/payments', paymentRouter);   // S-18 / T-41
+app.use('/api/payments', paymentService ? createPaymentRouter({ paymentService }) : paymentRouter); // S-18 / T-41
+if (paymentProvider === 'mock') {
+  app.use('/api/payments/mock', createMockPaymentRouter({ gateway: paymentGateway, paymentResultService }));
+}
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -87,10 +92,17 @@ app.use((err, _req, res, _next) => {
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 // Chỉ mở cổng khi chạy trực tiếp (node src/app.js), không mở khi test import file này
+return app;
+};
+const app = createApp();
 module.exports = app; // export để test, không tạo timer hoặc mở cổng khi import
+module.exports.createApp = createApp;
 if (require.main === module) {
-  require('./server').startServer({ app }).catch(() => {
-    console.error('[Server] Startup failed.');
+  require('./server').startServer().catch((error) => {
+    const { PaymentConfigurationError } = require('./config/paymentProviderConfig');
+    console.error(error instanceof PaymentConfigurationError
+      ? `[Server] Payment configuration invalid: ${error.message}`
+      : '[Server] Startup failed.');
     process.exitCode = 1;
   });
 }
