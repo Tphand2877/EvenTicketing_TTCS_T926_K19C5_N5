@@ -24,8 +24,32 @@ app.use(auditAccessDenials);
 
 // ─── SCRUM-212 [S-21 (T-48, T-49)]: Webhook thanh toán ──────────────────────
 // Mount TRƯỚC express.json() để kiểm tra chữ ký trên raw stream trước khi đọc/parse nội dung JSON
-app.use('/api/payments/webhook', rawWebhookParser, verifyWebhookSignature, handlePaymentWebhook);
-app.use('/payments/webhook', rawWebhookParser, verifyWebhookSignature, handlePaymentWebhook);
+const isMomoWebhook = (req) => {
+  if (req.headers['x-signature']) return false;
+  const body = req.body;
+  if (Buffer.isBuffer(body) && body.includes('partnerCode')) return true;
+  return false;
+};
+
+const handleWebhookIntercept = (req, res, next) => {
+  if (!isMomoWebhook(req)) {
+    return verifyWebhookSignature(req, res, (err) => {
+      if (err) return next(err);
+      return handlePaymentWebhook(req, res, next);
+    });
+  }
+  // MoMo IPN (S-20 / T-46): giữ rawBody dạng Buffer cho paymentWebhookRouter
+  req.rawBody = req.body;
+  try {
+    req.body = JSON.parse(req.body.toString('utf8'));
+  } catch {
+    // Để paymentWebhookRouter xử lý giải mã và validate payload
+  }
+  next();
+};
+
+app.use('/api/payments/webhook', rawWebhookParser, handleWebhookIntercept);
+app.use('/payments/webhook', rawWebhookParser, handleWebhookIntercept);
 
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
 app.use(express.json({
