@@ -22,12 +22,12 @@ describe('Payment gateway contract and selection (T-40)', () => {
   test('selects the configured adapter and returns the shared interface', () => {
     const createFakeAdapter = jest.fn(() => fakeGateway);
     const gateway = createPaymentGateway({
-      env: { PAYMENT_PROVIDER: 'fake' },
-      adapters: { fake: createFakeAdapter },
+      env: { PAYMENT_PROVIDER: 'momo' },
+      adapters: { momo: createFakeAdapter },
     });
 
     expect(createFakeAdapter).toHaveBeenCalledWith({
-      env: { PAYMENT_PROVIDER: 'fake' },
+      env: { PAYMENT_PROVIDER: 'momo' },
       fetchImpl: undefined,
     });
     expect(gateway).toBe(fakeGateway);
@@ -35,6 +35,6 @@ describe('Payment gateway contract and selection (T-40)', () => {
 
   test('fails closed for an unknown provider', () => {
     expect(() => createPaymentGateway({ env: { PAYMENT_PROVIDER: 'unknown' } }))
-      .toThrow('Unsupported payment gateway provider: unknown.');
+      .toThrow('PAYMENT_PROVIDER must be momo or mock');
   });
 });

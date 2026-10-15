@@ -389,6 +389,28 @@ không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
 ## S-18 / T-40: MoMo payment gateway adapter
 
+### T-44 provider selection (integration branch)
+
+Set `DEPLOY_ENV=development|test|staging|production` on the backend. `NODE_ENV`
+controls Node behavior and does not select the deployment: staging may use
+`NODE_ENV=production`. `PAYMENT_PROVIDER` is the only gateway selector. Leave it
+unset for the staging Mock default, set `momo` for MoMo, or set `mock` in a
+non-production deployment. The legacy `PAYMENT_GATEWAY` setting is rejected.
+
+Mock requires a backend-only `MOCK_PAYMENT_WEBHOOK_SECRET` of at least 32 bytes
+and `MOCK_PAYMENT_PUBLIC_ORIGIN`. Use an HTTPS origin on staging; HTTP is accepted
+only for localhost in development/test. The server generates signed checkout
+tokens and processes the result through T-42. Never put the signing key in a
+`VITE_*` variable or let the browser sign payment results. Restart the backend
+after changing provider. Production requires an explicit `PAYMENT_PROVIDER=momo`
+and refuses Mock before opening the HTTP listener.
+
+Do not switch providers while orders claimed by the old provider are unsettled:
+new payment requests for such orders are rejected, and callbacks from the old
+provider need its original verifier. Drain and reconcile those orders before a
+rolling switch. S-20's webhook idempotency branch and T-43's frontend Mock page
+still require contract reconciliation before this integration branch can merge.
+
 Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
 `captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
 gateway factory. The adapter signs create requests, verifies MoMo's signed
