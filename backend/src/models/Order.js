@@ -165,10 +165,14 @@ const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
       throw err;
     }
 
-    // 2. Lấy danh sách seat_ids từ seat_hold_seats
-    const heldSeats = await trx('seat_hold_seats')
-      .where({ hold_id: holdId })
-      .orderBy('seat_id');
+    // 2. Lấy danh sách seat_ids từ seat_hold_seats (nếu bảng tồn tại)
+    let heldSeats = [];
+    const hasSeatHoldSeats = await trx.schema.hasTable('seat_hold_seats');
+    if (hasSeatHoldSeats) {
+      heldSeats = await trx('seat_hold_seats')
+        .where({ hold_id: holdId })
+        .orderBy('seat_id');
+    }
 
     let seatIds = heldSeats.map((s) => s.seat_id);
 
