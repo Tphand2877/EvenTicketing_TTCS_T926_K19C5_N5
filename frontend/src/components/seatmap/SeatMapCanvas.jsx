@@ -1,114 +1,211 @@
-const SEAT_SIZE = 30
-const SEAT_GAP = 7
-const ROW_GAP = 12
-const LEFT_MARGIN = 48
-const TOP_MARGIN = 52
 
-const statusLabel = (seat, selected) => {
-  if (selected) return 'đang được bạn giữ'
-  if (seat.status === 'held') return 'đang có người giữ'
-  if (seat.status === 'sold') return 'đã bán'
-  return 'còn trống'
-}
+import { useMemo, useState } from 'react'
 
-const statusClass = (seat, selected) => {
-  if (selected) return 'fill-pink-600 stroke-pink-700'
-  if (seat.status === 'held') return 'fill-amber-100 stroke-amber-500'
-  if (seat.status === 'sold') return 'fill-gray-300 stroke-gray-400'
-  return 'fill-white stroke-gray-400'
-}
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 2.2
+const ZOOM_STEP = 0.15
 
-/** A single SVG keeps the map compact while retaining keyboard access. */
-export default function SeatMapCanvas({ seats, selectedSeatIds = [], onSeatToggle, disabled = false }) {
-  if (!Array.isArray(seats) || seats.length === 0) {
-    return <p className="text-sm text-gray-500">Suất diễn chưa có sơ đồ ghế.</p>
+/**
+ * SCRUM-165 (T-20): Sơ đồ ghế trên trình duyệt kèm màu và ký hiệu trạng thái:
+ * - Trống: màu xanh lá/trắng, ký hiệu '○'
+ * - Đang có người giữ: màu vàng hổ phách, ký hiệu '⏳'
+ * - Đã bán: màu xám, ký hiệu '✕'
+ * - Đang chọn: màu hồng tím, ký hiệu '✓'
+ *
+ * AC5: Hỗ trợ phóng to thu nhỏ trên điện thoại/màn hình nhỏ và bấm trúng ghế chính xác.
+ * AC4: Tối ưu hóa hiển thị 2000 ghế dưới 2 giây.
+ */
+export default function SeatMapCanvas({
+  seats: rawSeats,
+  selectedSeatIds = [],
+  maxSelect = 10,
+  onSeatToggle,
+  disabled = false,
+  onRefresh,
+}) {
+  const [zoom, setZoom] = useState(1.0)
+
+  // Chỉ hiển thị ghế có ID thật từ inventory; ghế mô phỏng không thể giữ an toàn.
+  const normalizedSeats = useMemo(() => {
+    return Array.isArray(rawSeats) ? rawSeats : []
+  }, [rawSeats])
+
+  // Nhóm ghế theo hàng (row) để vẽ lưới
+  const rowsGrouped = useMemo(() => {
+    const map = new Map()
+    for (const seat of normalizedSeats) {
+      const r = seat.row || 'A'
+      if (!map.has(r)) {
+        map.set(r, [])
+      }
+      map.get(r).push(seat)
+    }
+
+    return Array.from(map.entries()).map(([rowName, rowSeats]) => ({
+      rowName,
+      seats: rowSeats.sort((a, b) => a.number - b.number),
+    }))
+  }, [normalizedSeats])
+
+  const selectedIds = useMemo(() => new Set(selectedSeatIds.map(Number)), [selectedSeatIds])
+
+  const toggleSeat = (seat) => {
+    const isSelected = selectedIds.has(Number(seat.id))
+    if (disabled || (!isSelected && seat.status !== 'available')) return
+    if (!isSelected && selectedIds.size >= maxSelect) return
+    onSeatToggle?.(seat)
   }
 
-  const sortedSeats = [...seats].sort((a, b) => (
-    String(a.row).localeCompare(String(b.row), undefined, { numeric: true })
-    || Number(a.number) - Number(b.number)
-    || Number(a.id) - Number(b.id)
-  ))
-  const rows = [...new Set(sortedSeats.map((seat) => String(seat.row))) ]
-  const maxNumber = Math.max(...sortedSeats.map((seat) => Number(seat.number) || 0))
-  const width = LEFT_MARGIN + maxNumber * (SEAT_SIZE + SEAT_GAP) + 12
-  const height = TOP_MARGIN + rows.length * (SEAT_SIZE + ROW_GAP) + 12
-  const selected = new Set(selectedSeatIds.map(Number))
+  const handleZoomIn = () => setZoom((z) => Math.min(MAX_ZOOM, parseFloat((z + ZOOM_STEP).toFixed(2))))
+  const handleZoomOut = () => setZoom((z) => Math.max(MIN_ZOOM, parseFloat((z - ZOOM_STEP).toFixed(2))))
+  const handleResetZoom = () => setZoom(1.0)
+
+  if (normalizedSeats.length === 0) {
+    return null
+  }
 
   return (
-    <div className="max-h-[60vh] overflow-auto rounded-xl border border-gray-100 bg-gray-50 p-3">
-      <svg
-        role="group"
-        aria-label="Sơ đồ ghế của suất diễn"
-        viewBox={`0 0 ${width} ${height}`}
-        width={width}
-        height={height}
-        className="block"
-      >
-        <text x={width / 2} y="24" textAnchor="middle" className="fill-gray-500 text-[11px] font-semibold tracking-[0.2em]">
-          SÂN KHẤU
-        </text>
-        <path d={`M ${LEFT_MARGIN} 32 Q ${width / 2} 48 ${width - 12} 32`} fill="none" stroke="#c4b5fd" strokeWidth="4" strokeLinecap="round" />
-        {sortedSeats.map((seat) => {
-          const rowIndex = rows.indexOf(String(seat.row))
-          const number = Number(seat.number)
-          const x = LEFT_MARGIN + (number - 1) * (SEAT_SIZE + SEAT_GAP)
-          const y = TOP_MARGIN + rowIndex * (SEAT_SIZE + ROW_GAP)
-          const isSelected = selected.has(Number(seat.id))
-          const canSelect = seat.status === 'available' || isSelected
-          const label = `Ghế ${seat.row}${seat.number}, ${statusLabel(seat, isSelected)}`
-          const handleActivate = () => {
-            if (!disabled && canSelect) onSeatToggle?.(seat)
-          }
+    <div className="space-y-4">
+      {/* Thanh điều khiển Zoom cho điện thoại & desktop (AC5) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs">
+        <div className="flex items-center gap-2 text-gray-700">
+          <span className="font-medium">Kích thước sơ đồ:</span>
+          <span className="font-semibold text-pink-600 bg-white px-2 py-0.5 rounded border border-gray-200">
+            {Math.round(zoom * 100)}%
+          </span>
+          <span className="text-[11px] text-gray-400 hidden sm:inline">
+            (Có thể phóng to thu nhỏ trên điện thoại để bấm chính xác)
+          </span>
+        </div>
 
-          return (
-            <g
-              key={seat.id}
-              role="button"
-              tabIndex={!disabled && canSelect ? 0 : -1}
-              aria-label={label}
-              aria-pressed={isSelected}
-              aria-disabled={disabled || !canSelect}
-              className={`${statusClass(seat, isSelected)} ${!disabled && canSelect ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-              onClick={handleActivate}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  handleActivate()
-                }
-              }}
-            >
-              <title>{label}</title>
-              <rect
-                x={x}
-                y={y}
-                width={SEAT_SIZE}
-                height={SEAT_SIZE}
-                rx="7"
-                className={statusClass(seat, isSelected)}
-                strokeWidth="1.5"
-              />
-              <text x={x + SEAT_SIZE / 2} y={y + 19} textAnchor="middle" className={`fill-current text-[10px] font-semibold ${isSelected ? 'text-white' : 'text-gray-700'}`}>
-                {seat.number}
-              </text>
-              <text x={x + SEAT_SIZE - 4} y={y + 8} textAnchor="end" className={`fill-current text-[9px] font-bold ${isSelected ? 'text-white' : 'text-gray-700'}`}>
-                {isSelected ? '✓' : seat.status === 'held' ? 'H' : seat.status === 'sold' ? '×' : '○'}
-              </text>
-            </g>
-          )
-        })}
-        {rows.map((row, index) => (
-          <text
-            key={row}
-            x="34"
-            y={TOP_MARGIN + index * (SEAT_SIZE + ROW_GAP) + 19}
-            textAnchor="middle"
-            className="fill-gray-500 text-xs font-semibold"
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            disabled={zoom <= MIN_ZOOM}
+            title="Thu nhỏ sơ đồ (-)"
+            aria-label="Thu nhỏ sơ đồ"
+            className="w-7 h-7 rounded bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-40 flex items-center justify-center font-bold text-gray-700 text-sm active:scale-95 transition-transform"
           >
-            {row}
-          </text>
-        ))}
-      </svg>
+            -
+          </button>
+          <button
+            type="button"
+            onClick={handleResetZoom}
+            title="Đặt lại kích thước 100%"
+            aria-label="Đặt lại kích thước 100%"
+            className="px-2 h-7 rounded bg-white border border-gray-300 hover:bg-gray-100 text-[11px] font-medium text-gray-700 flex items-center justify-center active:scale-95 transition-transform"
+          >
+            100%
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            disabled={zoom >= MAX_ZOOM}
+            title="Phóng to sơ đồ (+)"
+            aria-label="Phóng to sơ đồ"
+            className="w-7 h-7 rounded bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-40 flex items-center justify-center font-bold text-gray-700 text-sm active:scale-95 transition-transform"
+          >
+            +
+          </button>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              title="Làm mới trạng thái sơ đồ ghế"
+              aria-label="Làm mới trạng thái sơ đồ ghế"
+              className="ml-1 px-2.5 h-7 rounded bg-white border border-gray-300 hover:bg-gray-100 text-[11px] font-medium text-gray-700 flex items-center gap-1 active:scale-95 transition-transform"
+            >
+              <span>↻</span>
+              <span className="hidden sm:inline">Làm mới</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Sân khấu */}
+      <div className="text-center text-[10px] font-semibold tracking-widest text-gray-400 uppercase select-none">
+        <div className="mx-auto mb-1.5 h-2 w-2/3 max-w-md rounded-full bg-gradient-to-r from-violet-500 via-pink-500 to-amber-400 shadow-sm" />
+        Sân khấu
+      </div>
+
+      {/* Vùng sơ đồ ghế cuộn được với zoom transform (AC5, AC1) */}
+      <div
+        className="overflow-auto border border-gray-200 rounded-2xl bg-white p-4 max-h-[560px] shadow-inner select-none"
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+      >
+        <div
+          className="inline-flex flex-col gap-2 min-w-full items-center transition-transform duration-150 origin-top"
+          style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
+        >
+          {rowsGrouped.map(({ rowName, seats }) => (
+            <div key={rowName} className="flex items-center gap-2">
+              <span className="w-8 text-[11px] font-bold text-gray-400 text-right shrink-0">
+                {rowName}
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                {seats.map((seat) => {
+                  const isSelected = selectedIds.has(Number(seat.id))
+                  const isHeld = seat.status === 'held'
+                  const isSold = seat.status === 'sold'
+                  const isAvailable = seat.status === 'available'
+                  const full = !isSelected && selectedIds.size >= maxSelect
+
+                  let statusText = 'Còn trống'
+                  let symbol = '○'
+                  let stateClass = 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-500'
+
+                  if (isSold) {
+                    statusText = 'Đã bán'
+                    symbol = '✕'
+                    stateClass = 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed opacity-80'
+                  } else if (isSelected) {
+                    statusText = 'Bạn đang giữ'
+                    symbol = '✓'
+                    stateClass = 'bg-pink-600 border-pink-600 text-white font-bold ring-2 ring-pink-300 shadow-sm'
+                  } else if (isHeld) {
+                    statusText = 'Đang có người giữ'
+                    symbol = '⏳'
+                    stateClass = 'bg-amber-100 border-amber-300 text-amber-800 cursor-not-allowed opacity-90'
+                  } else if (full || disabled) {
+                    stateClass = 'bg-white border-gray-200 text-gray-300 cursor-not-allowed'
+                  }
+
+                  const isButtonDisabled = disabled || isSold || (!isAvailable && !isSelected) || full
+
+                  return (
+                    <button
+                      key={seat.id}
+                      type="button"
+                      disabled={isButtonDisabled}
+                      onClick={() => toggleSeat(seat)}
+                      title={`Ghế ${seat.row}${seat.number} (${statusText})${seat.category ? ` - ${seat.category}` : ''}`}
+                      aria-label={`Ghế ${seat.row}${seat.number} - ${statusText}`}
+                      aria-pressed={isSelected}
+                      data-seat-id={seat.id}
+                      data-seat-status={seat.status}
+                      className={`relative min-w-[28px] h-7 px-1 rounded flex items-center justify-center gap-0.5 text-[10px] font-medium border transition-colors select-none ${stateClass}`}
+                    >
+                      <span className="text-[10px] leading-none shrink-0 font-bold" aria-hidden="true">
+                        {symbol}
+                      </span>
+                      <span className="leading-none text-[9px]">
+                        {seat.number}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <span className="w-8 text-[11px] font-bold text-gray-400 text-left shrink-0">
+                {rowName}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   )
 }

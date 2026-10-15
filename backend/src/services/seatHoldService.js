@@ -31,6 +31,11 @@ const createSeatHoldService = (repository = SeatHold) => ({
   async holdSeats({ showtimeId, userId, quantity, now }) {
     return repository.withShowtimeLock(showtimeId, async (transaction, showtime) => {
       if (!showtime) throw new SeatHoldError('SHOWTIME_NOT_FOUND', 'Không tìm thấy suất diễn.');
+      // S-07 AC3: chỉ suất đang bán nhận giữ chỗ MỚI. Kiểm tra trong khoá dòng showtimes,
+      // nên không lọt lượt giữ nào sau khi organizer đóng bán. Huỷ/hết hạn hold cũ không bị ảnh hưởng.
+      if (showtime.status !== 'on_sale') {
+        throw new SeatHoldError('NOT_ON_SALE', 'Suất diễn không mở bán, không thể giữ chỗ mới.');
+      }
       // Read the database clock AFTER acquiring the lock, including time spent waiting.
       const asOf = await repository.currentTime(transaction, now);
       if (repository.hasSeatSpecificHolds
@@ -38,6 +43,13 @@ const createSeatHoldService = (repository = SeatHold) => ({
         throw new SeatHoldError(
           'SEAT_SPECIFIC_HOLDS_ACTIVE',
           'Suất diễn đang dùng giữ chỗ theo mã ghế. Vui lòng chọn ghế trên sơ đồ.'
+        );
+      }
+      if (repository.hasLiveOrderAllocations
+        && await repository.hasLiveOrderAllocations(showtimeId, transaction)) {
+        throw new SeatHoldError(
+          'ORDER_SEAT_ALLOCATIONS_ACTIVE',
+          'Suất diễn đã có ghế gắn với đơn hàng. Vui lòng chọn ghế trên sơ đồ.'
         );
       }
       const existing = await repository.findActiveUserHold(transaction, showtimeId, userId);

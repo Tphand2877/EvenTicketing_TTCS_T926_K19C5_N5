@@ -18,6 +18,11 @@ const createSeatHoldRepository = (database) => {
       .where({ showtime_id: showtimeId, user_id: userId, status: 'active' }).first(),
     hasSeatSpecificHolds: (showtimeId, transaction = database) => transaction('seat_hold_seats')
       .where({ showtime_id: showtimeId }).first().then(Boolean),
+    hasLiveOrderAllocations: (showtimeId, transaction = database) => transaction('order_items as allocation')
+      .join('seats as seat', 'seat.id', 'allocation.seat_id')
+      .where('seat.showtime_id', showtimeId)
+      .whereNull('allocation.released_at')
+      .first('allocation.id').then(Boolean),
     async heldQuantity({ showtimeId, excludeHoldId, now, transaction = database }) {
       const query = transaction('seat_holds').where({ showtime_id: showtimeId })
         .andWhere(function () {
@@ -27,7 +32,17 @@ const createSeatHoldRepository = (database) => {
         });
       if (excludeHoldId) query.whereNot('id', excludeHoldId);
       const row = await query.sum({ held: 'quantity' }).first();
-      return Number(row.held || 0);
+      const allocations = await transaction('order_items as allocation')
+        .join('seats as seat', 'seat.id', 'allocation.seat_id')
+        .leftJoin('seat_holds as linked_hold', function () {
+          this.on('linked_hold.order_id', '=', transaction.raw('??::text', ['allocation.order_id']))
+            .andOnIn('linked_hold.status', ['pending_payment', 'confirmed']);
+        })
+        .where('seat.showtime_id', showtimeId)
+        .whereNull('allocation.released_at')
+        .whereNull('linked_hold.id')
+        .countDistinct({ allocated: 'allocation.seat_id' }).first();
+      return Number(row.held || 0) + Number(allocations.allocated || 0);
     },
     async insert(transaction, data) {
       const [hold] = await transaction('seat_holds').insert(data).returning('*');

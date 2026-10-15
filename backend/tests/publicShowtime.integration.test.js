@@ -1,4 +1,4 @@
-/** T-11/T-15 and future per-seat holds/tickets are test fixtures, not production migrations. */
+/** S-15 prices and future per-seat holds/tickets are test fixtures; T-11/T-15 schema uses the real migrations. */
 process.env.JWT_SECRET = 'public-query-integration-test-only';
 const crypto = require('crypto');
 const path = require('path');
@@ -17,33 +17,32 @@ const uncached = createPublicShowtimeService({ pageCache: { get: async () => nul
 const describeDatabase = process.env.RUN_PUBLIC_QUERY_DB_TESTS === '1' ? describe : describe.skip;
 const describeRedis = process.env.RUN_PUBLIC_QUERY_REDIS_TESTS === '1' ? describe : describe.skip;
 const p95 = (samples) => samples.sort((a, b) => a - b)[Math.ceil(samples.length * 0.95) - 1];
+const addOrderAllocation = async (seatIds, { status = 'paid', releasedAt = null } = {}) => {
+  const id = crypto.randomUUID();
+  await mockDatabase('orders').insert({
+    id, user_id: 1, status, total_amount: seatIds.length,
+    expires_at: '2099-01-01T00:00:00Z',
+  });
+  await mockDatabase('order_items').insert(seatIds.map((seatId) => ({
+    order_id: id, seat_id: seatId, category_name: 'Standard', unit_price: 1,
+    released_at: releasedAt,
+  })));
+};
 
 describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
   beforeAll(async () => {
     await mockDatabase.schema.createSchema(schema);
     await mockDatabase.migrate.latest({ directory: path.join(__dirname, '../src/migrations') });
     await mockDatabase.raw(`
-      CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
-      ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'draft';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer, notes text);
-      CREATE INDEX category_showtime ON seat_categories(showtime_id);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
+      -- seats/seat_categories (T-11, migration 007) and showtimes.status (T-15, migration 008)
+      -- now come from real migrations.
+      -- Only the later S-15 price column (and an internal field that must never leak) are simulated.
+      ALTER TABLE seat_categories ADD COLUMN price integer, ADD COLUMN notes text;
       CREATE TABLE fixture_holds (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL, expires_at timestamptz NOT NULL, user_id integer);
       CREATE INDEX holds_showtime_seat ON fixture_holds(showtime_id, seat_id);
-      CREATE TABLE fixture_tickets (
-        id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL, status text NOT NULL);
-      CREATE INDEX tickets_showtime_seat ON fixture_tickets(showtime_id, seat_id);
       CREATE OR REPLACE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
-      CREATE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
-      CREATE INDEX showtime_sale_start ON showtimes(status, starts_at, id);
     `);
     await mockDatabase('roles').insert({ id: 1, name: 'organizer' });
     await mockDatabase('users').insert({ id: 1, email: 'query-fixture@example.test', password_hash: 'fixture', role_id: 1 });
@@ -67,7 +66,8 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
   }, 30000);
   beforeEach(async () => {
     await mockDatabase('fixture_holds').del();
-    await mockDatabase('fixture_tickets').del();
+    await mockDatabase('order_items').del();
+    await mockDatabase('orders').del();
     await mockDatabase('showtimes').update({ status: 'on_sale', starts_at: '2099-01-01T00:00:00Z', event_id: 1 });
   });
   afterAll(async () => {
@@ -117,12 +117,8 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
       { showtime_id: 2, seat_id: 7, status: 'active', expires_at: '2099-01-01' },
       { showtime_id: 1, seat_id: 8, status: 'active', expires_at: mockDatabase.raw('statement_timestamp()') },
     ]);
-    await mockDatabase('fixture_tickets').insert([
-      { showtime_id: 1, seat_id: 4, status: 'confirmed' },
-      { showtime_id: 1, seat_id: 4, status: 'confirmed' },
-      { showtime_id: 1, seat_id: 9, status: 'cancelled' },
-      { showtime_id: 2, seat_id: 10, status: 'confirmed' },
-    ]);
+    await addOrderAllocation([4]);
+    await addOrderAllocation([9], { status: 'cancelled', releasedAt: new Date() });
     const queries = [];
     const listener = (q) => queries.push(q.sql);
     mockDatabase.on('query', listener);
@@ -165,9 +161,7 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
     await mockDatabase('fixture_holds').insert(Array.from({ length: 2000 }, (_, i) => ({
       showtime_id: 1, seat_id: i + 1, status: i % 2 ? 'active' : 'cancelled', expires_at: '2099-01-01',
     })));
-    await mockDatabase('fixture_tickets').insert(Array.from({ length: 500 }, (_, i) => ({
-      showtime_id: 1, seat_id: i * 4 + 1, status: 'confirmed',
-    })));
+    await addOrderAllocation(Array.from({ length: 500 }, (_, i) => i * 4 + 1));
     const listTimes = [];
     const uncachedTimes = [];
     const mapTimes = [];

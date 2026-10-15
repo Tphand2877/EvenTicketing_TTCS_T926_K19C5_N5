@@ -99,9 +99,13 @@ const createSeatSpecificHoldService = (db = database, { ttlSeconds = getTtlSecon
 
   const findSoldSeats = async (transaction, showtimeId, seatIds) => {
     const { rows } = await transaction.raw(`
-      SELECT DISTINCT seat_id
-      FROM public_sold_seats
-      WHERE showtime_id = ? AND seat_id = ANY(?::integer[])
+      SELECT DISTINCT items.seat_id
+      FROM order_items AS items
+      JOIN orders AS payment_order ON payment_order.id = items.order_id
+      JOIN seats AS inventory ON inventory.id = items.seat_id
+      WHERE inventory.showtime_id = ?
+        AND items.seat_id = ANY(?::integer[])
+        AND items.released_at IS NULL
     `, [showtimeId, seatIds]);
     return rows.map((row) => Number(row.seat_id));
   };

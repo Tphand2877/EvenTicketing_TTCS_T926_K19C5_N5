@@ -2,10 +2,11 @@ require('dotenv').config();
 const app = require('./app');
 const db = require('./config/database');
 const { startSeatHoldCleanupJob } = require('./jobs/seatHoldCleanupJob');
+const { startOrderExpiryCleanupJob } = require('./jobs/orderExpiryCleanupJob');
 
 const startServer = async ({ port = process.env.PORT || 3000, app: application = app } = {}) => {
-  const job = startSeatHoldCleanupJob();
-  await job.ready;
+  const jobs = [startSeatHoldCleanupJob(), startOrderExpiryCleanupJob()];
+  await Promise.all(jobs.map((job) => job.ready));
   const server = application.listen(port, () => console.log(`Server is running on port ${port}`));
   let closing;
   const close = () => {
@@ -14,7 +15,7 @@ const startServer = async ({ port = process.env.PORT || 3000, app: application =
         process.removeListener('SIGTERM', shutdown);
         process.removeListener('SIGINT', shutdown);
         await new Promise((resolve) => server.close(resolve));
-        await job.stop();
+        await Promise.all(jobs.map((job) => job.stop()));
         await db.destroy();
       })();
     }

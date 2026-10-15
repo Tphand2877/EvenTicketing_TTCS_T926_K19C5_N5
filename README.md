@@ -295,11 +295,20 @@ npm run build
 - `GET /api/events/:id` - Lấy chi tiết thông tin sự kiện và các suất diễn liên quan.
 - `POST /api/events` - Tạo sự kiện mới (Yêu cầu quyền `organizer` hoặc `admin`).
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
+
 - `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
 - `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
 - `GET /api/showtimes/:id/seat-holds/current` - Lấy lượt giữ còn hạn và mã ghế của tài khoản hiện tại (Yêu cầu đăng nhập).
 - `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
+
+- `POST /api/showtimes/:id/holds` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/holds/:holdId` - Hủy giữ chỗ ghế ngồi.
+- `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
+- `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
+- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
+- `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
+
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
@@ -386,7 +395,166 @@ Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, 
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
-## 9. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
+
+## S-18 / T-40: MoMo payment gateway adapter
+
+Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
+`captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
+gateway factory. The adapter signs create requests, verifies MoMo's signed
+create response and IPN payload, and normalizes verified results. Repeated
+payment requests for one order use the order ID as MoMo's `requestId`.
+Requests explicitly enable MoMo's one-step `autoCapture`; result codes `0` and
+`9000` normalize as success, while `1000`, `7000`, and `7002` stay pending.
+
+Configure these variables in the repository `.env` for Docker Compose, or in
+`backend/.env` for a direct backend run:
+
+| Variable | Purpose |
+| --- | --- |
+| `PAYMENT_PROVIDER` | Adapter selector; currently `momo` |
+| `MOMO_PARTNER_CODE` | MoMo merchant partner code |
+| `MOMO_ACCESS_KEY` | MoMo access key |
+| `MOMO_SECRET_KEY` | MoMo signing secret; keep it server-side and out of source control |
+| `MOMO_API_BASE_URL` | Defaults to MoMo sandbox `https://test-payment.momo.vn` |
+| `MOMO_REDIRECT_URL` | Buyer return URL after leaving MoMo |
+| `MOMO_IPN_URL` | Public server endpoint that receives MoMo payment notifications |
+
+The IPN URL must be reachable by MoMo. For local testing, use an HTTPS tunnel
+and set its callback URL. Production requires HTTPS callback and return URLs.
+`POST /api/payments/orders/:orderId` starts payment for the authenticated
+owner of a pending order. The server reads the VND total and expiry from the
+stored order, ignores any amount in the request body, rejects paid or expired
+orders with `409`, and atomically claims the order in PostgreSQL before calling
+MoMo. It checks expiry again after MoMo responds and before saving or returning
+the URL. The order UUID is the stable gateway request ID.
+
+Migration `010_add_payment_request_recovery` adds a saved redirect URL, request
+state, claim start time, and a sanitized provider error code. The first
+successful request stores the URL; repeated `POST` calls and
+`GET /api/payments/orders/:orderId` return that same URL without contacting
+MoMo again. Only the atomic claim winner calls the gateway. While that request
+is recent, duplicate callers receive `202` with `status: "processing"` and a
+`Retry-After` header. A provider timeout, invalid response, failed URL save, or
+claim older than two minutes is marked indeterminate on the next payment or
+status request. The API returns `409` with
+`code: "PAYMENT_RECONCILIATION_REQUIRED"` and the order/request IDs; it never
+clears the claim or retries MoMo automatically. Support must verify the request
+in MoMo before deciding how to resolve it. Payment URLs are returned only to
+the order owner and responses use `Cache-Control: no-store`.
+
+Success responses use `data.payment.status` (`ready`, `processing`, or
+`not_started`); failures include a stable top-level `code` for client handling.
+The client can branch on those fields:
+
+```json
+{ "success": true, "data": { "payment": { "status": "ready", "redirectUrl": "https://…" } } }
+{ "success": true, "data": { "payment": { "status": "processing", "retryAfterSeconds": 3 } } }
+{ "success": false, "code": "ORDER_EXPIRED", "message": "Đơn hàng đã hết hạn thanh toán." }
+```
+
+An indeterminate request returns `409` with
+`code: "PAYMENT_RECONCILIATION_REQUIRED"` and `details.gatewayRequestId`, so
+the client can stop retrying and show a support state.
+The checkout page remains a demo until T-37/T-38 connect official order creation
+and server-side totals. Verified payment result and webhook processing remain
+in T-42. Apply the T-36 orders migration before migration 010.
+
+## 9. S-05: Nạp sơ đồ ghế từ tệp JSON (T-11, T-12)
+
+**T-11:** migration `007` tạo bảng `seat_categories` (hạng ghế theo từng suất diễn,
+tên không trùng trong một suất) và `seats` (`row_label`, `seat_number`, `category_id`;
+không trùng hàng + số trong một suất). Khoá ngoại ghép bảo đảm hạng ghế của một ghế
+luôn thuộc cùng suất diễn. Giá theo hạng do S-15 bổ sung sau.
+
+**T-12:** `PUT /api/showtimes/:id/seat-map` (organizer sở hữu sự kiện hoặc `admin`):
+
+```json
+{ "seats": [
+  { "row": "A", "number": 1, "category": "VIP" },
+  { "row": "A", "number": 2, "category": "VIP" },
+  { "row": "B", "number": 1, "category": "Thường" }
+] }
+```
+
+- Toàn bộ việc nạp chạy trong **một giao dịch** và khoá dòng suất diễn (cùng khoá với API giữ chỗ).
+- Hạng ghế chưa có được tạo theo tên trong tệp; hạng đã có được dùng lại.
+- Suất đã có sơ đồ nhưng chưa bán/giữ: sơ đồ cũ bị thay toàn bộ.
+- Suất đang có người giữ chỗ, đang chờ thanh toán hoặc đã bán: trả **409** `SEAT_MAP_LOCKED` kèm lý do.
+- Lỗi ở bất kỳ ghế nào: rollback, không lưu ghế nào.
+- Sức chứa (`capacity`) của suất được cập nhật bằng số ghế trong sơ đồ.
+- Tệp được kiểm tra trước khi ghi: tối đa 10.000 ghế, 50 hạng; `row` 1–10 ký tự,
+  `number` 1–9999, `category` 1–100 ký tự, không trùng ghế.
+  Giới hạn kích thước tệp là 5 MB (S-06 NFR).
+
+Ví dụ: `docs/seat-map-sample.json`
+
+```bash
+curl -X PUT http://localhost:3000/api/showtimes/1/seat-map \
+  -H "Authorization: Bearer <token organizer>" -H "Content-Type: application/json" \
+  --data-binary @docs/seat-map-sample.json
+```
+
+Kiểm thử: `tests/seatMap.test.js` (validate, phân quyền) và `tests/seatMap.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SEAT_MAP_DB_TESTS=1`): đủ 4 AC, gồm lỗi giả lập ở ghế thứ 1.500,
+và tệp 2.000 ghế dưới 5 giây.
+
+---
+
+## 10. S-06: Từ chối tệp sơ đồ sai và chỉ rõ vị trí (T-13, T-14)
+
+### T-13 – Bộ kiểm tra cấu trúc tệp trả về đủ danh sách lỗi kèm vị trí
+- **AC1:** Ghế thiếu trường bắt buộc (`row`, `number`, `category`) -> từ chối toàn bộ tệp và chỉ rõ ghế nào thiếu trường nào (vd: `Ghế #2: thiếu trường bắt buộc "row" (chuỗi 1–10 ký tự)`).
+- **AC2:** Ghế trùng hàng và số -> từ chối và chỉ ra cả cặp trùng (vd: `Ghế #2: trùng ghế A1 với ghế #1`).
+- **AC3:** Tệp có nhiều lỗi -> trả đủ danh sách toàn bộ lỗi trong một lần (không bị giới hạn 10 lỗi) để ban tổ chức sửa một lần rồi nạp lại.
+- **AC4:** Tệp không phải JSON hợp lệ -> trả HTTP 400 kèm chi tiết vị trí ký tự, dòng và cột (vd: `Định dạng JSON không hợp lệ tại vị trí ký tự 12 (position 12, dòng 1, cột 13)`), không hiện lỗi 500.
+- **NFR:** Kiểm tra cấu trúc chạy trước mọi giao dịch ghi; giới hạn kích thước tệp 5 MB (HTTP 413 nếu vượt quá).
+- **API kiểm tra xem trước:** `POST /api/showtimes/:id/seat-map/validate` (organizer hoặc admin) trả về kết quả kiểm tra và bản tóm tắt lưới ghế mà không ghi vào CSDL.
+- **Unit test:** `tests/seatMapValidator.test.js` và `tests/seatMap.test.js`.
+
+### T-14 – Màn hình tải lên hiện lỗi và xem trước lưới ghế
+- Tích hợp tại giao diện Organizer Dashboard (`/organizer`): bấm **"Suất diễn"** -> **"Sơ đồ ghế"** trên từng suất diễn.
+- Kéo thả hoặc chọn tệp `.json` (kiểm tra tức thì kích thước <= 5 MB và cú pháp JSON).
+- Nếu tệp sai: hiển thị hộp thoại báo lỗi chi tiết, gắn nhãn từng ghế bị lỗi, cho phép tìm kiếm/lọc lỗi. Toàn bộ tệp bị từ chối và nút xác nhận nạp bị vô hiệu hoá.
+- **AC5:** Nếu tệp hợp lệ: hiển thị xem trước lưới ghế trực quan (Seat Map Canvas Grid) với:
+  - Đúng số hàng ghế (xếp theo nhãn hàng A, B, C...).
+  - Đúng số ghế trong từng hàng và số thứ tự ghế.
+  - Màu sắc phân biệt theo từng hạng vé (VIP, Thường, Ban công,...) kèm bảng chú thích (Legend) số lượng và phần trăm.
+  - Thống kê tổng số ghế, số hàng, số hạng.
+- Nút **"Xác nhận nạp sơ đồ"** gửi yêu cầu `PUT /api/showtimes/:id/seat-map` để ghi vào CSDL trong một giao dịch an toàn.
+
+---
+
+## 11. S-07: Mở bán / đóng bán suất diễn (T-15, T-16)
+
+**T-15:** migration `008` thêm cột `showtimes.status` (enum `showtime_sale_status`) và bảng
+`showtime_status_logs`. Suất **tạo mới mặc định là nháp**; suất có sẵn trước S-07 được chuyển thành đang bán
+để giữ hành vi cũ.
+
+| Trạng thái | Người mua thấy? | Giữ chỗ mới? | Chuyển sang |
+|---|---|---|---|
+| `draft` (nháp) | Không | Không | `on_sale` (mở bán) |
+| `on_sale` (đang bán) | Có | Có | `closed` (đóng bán) |
+| `closed` (đã đóng bán) | Có, ghi "đã đóng bán" | Không | `on_sale` (mở bán lại) |
+
+- Mở bán bị chặn kèm lý do (409) khi: chưa có sơ đồ ghế (`NO_SEAT_MAP`), sự kiện chưa công khai
+  (`EVENT_NOT_PUBLISHED`), suất đã bắt đầu (`SHOWTIME_STARTED`), hoặc chuyển sai luật
+  (`INVALID_TRANSITION`, `ALREADY_IN_STATUS`).
+- Đóng bán chỉ chặn **giữ chỗ mới**; lượt giữ và đơn đang chờ vẫn huỷ, hết hạn, được job dọn như bình thường.
+  Việc kiểm tra trạng thái nằm trong khoá dòng suất diễn của API giữ chỗ, nên không lượt giữ nào lọt qua sau khi đã đóng.
+- Mỗi lần đổi trạng thái ghi `showtime_status_logs` (trạng thái cũ, mới, id người thao tác, thời điểm). Nhật ký chỉ lưu id, không lưu email.
+
+**T-16:** trang `/organizer` có khu "Suất diễn" dưới mỗi sự kiện: trạng thái, số ghế, nút nạp sơ đồ ghế (JSON),
+nút **Mở bán** / **Đóng bán** / **Mở bán lại**; lý do bị chặn hiện ngay dưới suất đó.
+Script `scripts/seed-demo-events.js` tạo suất demo kèm sơ đồ ghế và đã mở bán.
+
+Kiểm thử: `tests/showtimeSale.test.js` (phân quyền, mã lỗi) và `tests/showtimeSale.integration.test.js`
+(PostgreSQL thật, bật bằng `RUN_SHOWTIME_SALE_DB_TESTS=1`): 4 AC, nhật ký, migration dữ liệu cũ, và đóng bán
+giữa lúc 20 người đang giữ chỗ.
+
+---
+
+
+## 12. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
 
 T-22 thêm migration `007_create_seat_hold_seats.js`. `seat_holds` là lượt giữ
 chung của một người dùng cho một suất diễn; `seat_hold_seats` liên kết từng mã
@@ -417,16 +585,17 @@ T-24 tải sơ đồ từ `GET /api/showtimes/:id/seats` của T-19, đo độ l
 chủ. Khi đồng hồ về 0, giao diện tải lại sơ đồ để bỏ trạng thái giữ đã hết hạn.
 
 Các API giữ ghế kiểm tra inventory `seats`, trạng thái bán `showtimes.status`
-và view `public_sold_seats`; thiếu schema/view thì trả 503 để không báo ghế trống
-sai. T-11 cung cấp bảng ghế, T-15 cung cấp trạng thái mở bán và nguồn vé phải
-cung cấp `public_sold_seats` trước khi chạy nghiệm thu tích hợp. Không tạo view
-vé rỗng làm giả trạng thái ghế.
+và ghế đã bán từ `orders` / `order_items`. Thiếu schema thì trả 503 để không báo
+ghế trống sai. Không tạo view vé rỗng làm giả trạng thái ghế.
+Giao diện chỉ cho giữ seat ID từ sơ đồ thật; khi nguồn dữ liệu ghế lỗi, không
+tạo ghế mô phỏng để gửi giữ chỗ. API số lượng cũ từ chối suất có allocation đơn
+hàng còn hiệu lực; sơ đồ trả 503 khi còn hold số lượng chưa gắn seat ID.
 
 Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chung khi
 thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
 ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
 
-## 10. S-14 / SCRUM-183: Khôi phục lượt giữ khi mở lại trang
+## 13. S-14 / SCRUM-183: Khôi phục lượt giữ khi mở lại trang
 
 T-32 thêm endpoint đã xác thực `GET /api/showtimes/:id/seat-holds/current`.
 Endpoint chỉ trả lượt giữ `active` của người đăng nhập nếu `expires_at` còn sau
@@ -444,7 +613,9 @@ qua, endpoint không trả hold và sơ đồ T-19 hiển thị ghế là chỗ 
 Kiểm thử tích hợp PostgreSQL cho T-32 xác nhận mã ghế và hạn giữ của chủ sở hữu,
 không lộ hold cho tài khoản khác, bỏ qua hold hết hạn và yêu cầu đăng nhập.
 
-## 👥 11. Đội ngũ phát triển
+
+## 👥 14. Đội ngũ phát triển
+
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -454,5 +625,41 @@ không lộ hold cho tài khoản khác, bỏ qua hold hết hạn và yêu cầ
 Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
 and the single-query seat-state API are documented in
 [docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
-Configure `REDIS_URL` using `.env.example`. T-11/T-15 and per-seat hold/ticket read
-adapters must be connected before these new endpoints are available on staging.
+Configure `REDIS_URL` using `.env.example`. T-11 and T-15 schemas now exist; the
+seat-state query reads real seat holds and unreleased order allocations. Deploy
+the migrations before enabling these endpoints on staging.
+
+## 🎟️ Sơ đồ ghế còn trống (SCRUM-165 / S-09)
+
+* **User Story:** Là người mua vé tôi muốn nhìn sơ đồ ghế và biết ghế nào còn trống để chọn được chỗ ngồi mình muốn.
+* **Sub-tasks:**
+  - **T-19**: Truy vấn trạng thái ghế theo suất diễn trong một lần gọi duy nhất (`GET /api/showtimes/:id/seats`), trả về đầy đủ trạng thái của toàn bộ ghế (`available`, `held`, `sold`), không phát sinh N+1 truy vấn.
+  - **T-20**: Vẽ sơ đồ ghế trực quan trên trình duyệt (`SeatMapCanvas`, `SeatLegend`):
+    - 3 trạng thái ghế phân biệt rõ ràng bằng cả màu sắc và ký hiệu (○: Trống / xanh lá; ⏳: Đang có người giữ / vàng hổ phách; ✕: Đã bán / xám; ✓: Đang chọn / hồng tím).
+    - Hỗ trợ phóng to thu nhỏ mượt mà trên điện thoại (+, -, 100%, phạm vi 50% - 220%) và bấm trúng ghế chính xác (AC5).
+    - Suất diễn chưa nạp sơ đồ ghế hiển thị thông báo *"Suất diễn chưa mở bán"*, không render lưới rỗng (AC3).
+    - Tải lại trang phản ánh ngay trạng thái ghế vừa bị người khác giữ chuyển sang "Đang có người giữ" (AC2).
+  - **T-21**: Tệp mẫu 2000 ghế (`sample-seat-map-2000.json`) và bộ đo thời gian hiển thị: kiểm thử benchmark tự động đo thời gian xử lý và dựng cấu trúc 2000 ghế đạt ~1-2ms, đáp ứng hoàn hảo tiêu chí < 2 giây (AC4).
+
+## 🎪 Sự kiện đang mở bán & chi tiết suất diễn (SCRUM-162 / S-08)
+
+* **User Story:** Là người mua vé tôi muốn thấy các sự kiện đang bán và chi tiết từng suất để chọn suất phù hợp trước khi vào sơ đồ ghế.
+* **Sub-tasks:**
+  - **T-17**: Truy vấn suất diễn đang mở bán có phân trang cursor (`GET /api/showtimes`), chỉ trả về các suất `on_sale` trong tương lai của sự kiện đã publish, sắp xếp theo thời gian diễn (`starts_at ASC, id ASC`), tính toán khoảng giá (`min_price`, `max_price`), có bộ đệm Redis 30 giây đạt tiêu chuẩn NFR (p95 < 500ms khi có 200 suất diễn).
+  - **T-18**: Trang danh sách sự kiện (`EventListPage`) và trang chi tiết suất diễn (`ShowtimeDetailPage` / `/showtimes/:id`):
+    - **AC1:** Người dùng chưa đăng nhập vẫn xem được danh sách sự kiện kèm suất gần nhất được sắp xếp theo ngày diễn.
+    - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
+    - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
+    - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+
+# T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
+
+Chỉ bổ sung `payment_events` và handler chống trùng gọi T-42 của team trong
+cùng transaction. Không bổ sung gateway, schema đơn hàng/thanh toán/vé hoặc
+kịch bản T-47. Xem [docs/T-45-T-46-webhook-receipts.md](docs/T-45-T-46-webhook-receipts.md).
+# T-52: job nhả ghế của đơn quá hạn (Minh Quang)
+
+Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T-42 để đổi đơn
+`pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
+`ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
+Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).

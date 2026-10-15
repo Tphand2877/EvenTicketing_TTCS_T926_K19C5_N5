@@ -1,0 +1,284 @@
+{
+ "seats": [
+  {
+   "row": "A",
+   "number": 1,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 2,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 3,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 4,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 5,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 6,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 7,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 8,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 9,
+   "category": "VIP"
+  },
+  {
+   "row": "A",
+   "number": 10,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 1,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 2,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 3,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 4,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 5,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 6,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 7,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 8,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 9,
+   "category": "VIP"
+  },
+  {
+   "row": "B",
+   "number": 10,
+   "category": "VIP"
+  },
+  {
+   "row": "C",
+   "number": 1,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 2,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 3,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 4,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 5,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 6,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 7,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 8,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 9,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 10,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 11,
+   "category": "Thường"
+  },
+  {
+   "row": "C",
+   "number": 12,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 1,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 2,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 3,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 4,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 5,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 6,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 7,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 8,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 9,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 10,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 11,
+   "category": "Thường"
+  },
+  {
+   "row": "D",
+   "number": 12,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 1,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 2,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 3,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 4,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 5,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 6,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 7,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 8,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 9,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 10,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 11,
+   "category": "Thường"
+  },
+  {
+   "row": "E",
+   "number": 12,
+   "category": "Thường"
+  }
+ ]
+}

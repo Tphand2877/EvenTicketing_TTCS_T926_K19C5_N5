@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import SeatHoldTimer from '../components/seatmap/SeatHoldTimer'
+import { getServerNow } from '../services/apiClient'
 import { formatDateTime, formatPrice } from '../components/event/eventFormat'
 import { useAuth } from '../context/AuthContext'
 
@@ -44,7 +45,8 @@ export default function CheckoutPage() {
   })
   const [errors, setErrors]       = useState({})
   const [expired, setExpired]     = useState(() => !!hold
-    && Date.parse(hold.expiresAt) <= Date.now() + (hold.serverOffsetMs || 0))
+    && Date.parse(hold.expiresAt) <= (Number.isFinite(hold.serverOffsetMs)
+      ? Date.now() + hold.serverOffsetMs : getServerNow()))
   const [submitted, setSubmitted] = useState(false)
 
   const setField = (e) => {
@@ -55,6 +57,12 @@ export default function CheckoutPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    const serverNow = Number.isFinite(hold?.serverOffsetMs)
+      ? Date.now() + hold.serverOffsetMs : getServerNow()
+    if (!hold || Date.parse(hold.expiresAt) <= serverNow) {
+      setExpired(true)
+      return
+    }
     const found = validate(form)
     setErrors(found)
     if (Object.keys(found).length === 0) setSubmitted(true)
@@ -146,7 +154,7 @@ export default function CheckoutPage() {
             <div className="card-auth sticky top-20 space-y-4">
               <SeatHoldTimer
                 expiresAt={hold.expiresAt}
-                serverOffsetMs={hold.serverOffsetMs || 0}
+                serverOffsetMs={hold.serverOffsetMs}
                 onExpire={() => setExpired(true)}
               />
               <h2 className="font-semibold text-gray-900">Tóm tắt đơn hàng</h2>

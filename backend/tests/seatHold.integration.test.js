@@ -34,39 +34,27 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     await mockDatabase('users').insert(Array.from({ length: 25 }, (_, i) => ({
       id: i + 1, email: `s12-${i}@example.test`, password_hash: 'fixture', role_id: 1, is_active: true,
     })));
-    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test' });
+    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test', status: 'published' });
     await mockDatabase('showtimes').insert([
-      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z' },
-      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z' },
+      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
+      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
-    await mockDatabase.raw(`
-      CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
-      ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'on_sale';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
-      CREATE TABLE fixture_tickets (
-        id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
-        status text NOT NULL);
-      CREATE VIEW public_sold_seats AS
-        SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
-    `);
-    await mockDatabase('seat_categories').insert({ id: 1, showtime_id: 1, name: 'Standard', price: 100000 });
+    await mockDatabase.raw('ALTER TABLE seat_categories ADD COLUMN price integer');
+    await mockDatabase('seat_categories').insert([
+      { id: 1, showtime_id: 1, name: 'Standard', price: 100000 },
+      { id: 2, showtime_id: 2, name: 'Standard', price: 100000 },
+    ]);
     await mockDatabase('seats').insert([
       { id: 1, showtime_id: 1, row_label: 'A', seat_number: 1, category_id: 1 },
       { id: 2, showtime_id: 1, row_label: 'A', seat_number: 2, category_id: 1 },
       { id: 3, showtime_id: 1, row_label: 'A', seat_number: 3, category_id: 1 },
-      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: null },
+      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: 2 },
     ]);
   }, 30000);
   beforeEach(async () => {
     await mockDatabase('seat_holds').del();
-    await mockDatabase('fixture_tickets').del();
+    await mockDatabase('order_items').del();
+    await mockDatabase('orders').del();
     await mockDatabase('showtimes').update({ status: 'on_sale', starts_at: '2099-01-01T00:00:00Z' });
   });
   afterAll(async () => {
@@ -106,7 +94,7 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
   test('AC3: fresh process clears the entire old backlog and preserves a live hold', async () => {
     const live = await createHold();
     const shows = Array.from({ length: 150 }, (_, i) => ({
-      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z',
+      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale',
     }));
     await mockDatabase('showtimes').insert(shows);
     await mockDatabase('seat_holds').insert(shows.map((s) => ({
@@ -130,6 +118,29 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     expect(res.body.data).toEqual({ capacity: 1, held: 1, available: 0 });
     expect((await request(app).post('/api/showtimes/1/holds').set('Authorization', token(4)).send({ quantity: 1 })).status).toBe(409);
     expect(await service.releaseHold({ holdId: pending.id, userId: 2 })).toBe('not_found');
+  });
+  test('UUID order allocation joins its text hold ID without double counting a legacy order ID', async () => {
+    const orderId = crypto.randomUUID();
+    await mockDatabase('orders').insert({
+      id: orderId, user_id: 2, status: 'pending', total_amount: 100000,
+      expires_at: '2099-01-01T00:00:00Z',
+    });
+    await mockDatabase('order_items').insert({
+      order_id: orderId, seat_id: 4, category_name: 'Standard', unit_price: 100000,
+    });
+    await mockDatabase('seat_holds').insert([
+      {
+        id: crypto.randomUUID(), showtime_id: 2, user_id: 2, quantity: 1,
+        status: 'pending_payment', order_id: orderId, expires_at: new Date(0),
+      },
+      {
+        id: crypto.randomUUID(), showtime_id: 2, user_id: 3, quantity: 1,
+        status: 'confirmed', order_id: 'legacy-order-reference', expires_at: new Date(0),
+      },
+    ]);
+    expect(await service.getAvailability({ showtimeId: 2, capacity: 10 })).toEqual({
+      capacity: 10, held: 2, available: 8,
+    });
   });
   test('20 concurrent buyers get exactly one allocation of the expired final place', async () => {
     const old = await createHold();
@@ -276,7 +287,14 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
   });
 
   test('S-10 AC2: a sold seat rejects the whole selection without keeping a partial hold', async () => {
-    await mockDatabase('fixture_tickets').insert({ showtime_id: 1, seat_id: 2, status: 'confirmed' });
+    const orderId = crypto.randomUUID();
+    await mockDatabase('orders').insert({
+      id: orderId, user_id: 1, status: 'paid', total_amount: 100000,
+      expires_at: '2099-01-01T00:00:00Z',
+    });
+    await mockDatabase('order_items').insert({
+      order_id: orderId, seat_id: 2, category_name: 'Standard', unit_price: 100000,
+    });
     const response = await request(app)
       .post('/api/showtimes/1/seat-holds')
       .set('Authorization', token(2))
@@ -284,10 +302,18 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     expect(response.status).toBe(409);
     expect(await mockDatabase('seat_holds').where({ showtime_id: 1, user_id: 2 })).toHaveLength(0);
     expect(await mockDatabase('seat_hold_seats').where({ showtime_id: 1 })).toHaveLength(0);
+    const legacy = await request(app)
+      .post('/api/showtimes/1/holds')
+      .set('Authorization', token(3))
+      .send({ quantity: 1 });
+    expect(legacy.status).toBe(409);
+    const availability = await request(app).get('/api/showtimes/1/availability');
+    expect(availability.body.data.available).toBe(0);
   });
 
   test('S-10: an unassigned legacy quantity hold blocks seat-specific holds until it expires', async () => {
     await createHold(3);
+    expect((await request(app).get('/api/showtimes/1/seats')).status).toBe(503);
     const response = await request(app)
       .post('/api/showtimes/1/seat-holds')
       .set('Authorization', token(2))

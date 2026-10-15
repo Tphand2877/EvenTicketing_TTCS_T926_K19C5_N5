@@ -1,5 +1,5 @@
 /**
- * Script DEMO: tạo sẵn vài sự kiện + suất diễn cho organizer@test.com (SCRUM-80).
+ * Script DEMO: tạo sẵn vài sự kiện + suất diễn (kèm sơ đồ ghế, đã mở bán) cho organizer@test.com.
  * Chạy SAU create-test-users.js:  node scripts/seed-demo-events.js
  * Chạy lại nhiều lần không bị trùng (bỏ qua event đã có cùng tên).
  */
@@ -65,6 +65,29 @@ const EVENTS = [
   },
 ];
 
+const SEATS_PER_ROW = 20;
+const rowLabel = (i) => String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i / 26) : '');
+
+// Sơ đồ ghế demo: 2 hàng đầu là VIP, còn lại là Thường; tổng số ghế = sức chứa
+const seedSeatMap = async (showtimeId, capacity) => {
+  const categories = await knex('seat_categories')
+    .insert([{ showtime_id: showtimeId, name: 'VIP' }, { showtime_id: showtimeId, name: 'Thường' }])
+    .returning(['id', 'name']);
+  const idOf = Object.fromEntries(categories.map((c) => [c.name, c.id]));
+  const seats = Array.from({ length: capacity }, (_, i) => {
+    const row = Math.floor(i / SEATS_PER_ROW);
+    return {
+      showtime_id: showtimeId,
+      category_id: row < 2 ? idOf.VIP : idOf['Thường'],
+      row_label: rowLabel(row),
+      seat_number: (i % SEATS_PER_ROW) + 1,
+    };
+  });
+  for (let i = 0; i < seats.length; i += 1000) {
+    await knex('seats').insert(seats.slice(i, i + 1000));
+  }
+};
+
 (async () => {
   try {
     const organizer = await knex('users').where({ email: ORGANIZER_EMAIL }).first();
@@ -80,14 +103,17 @@ const EVENTS = [
       const [row] = await knex('events')
         .insert({ ...event, organizer_id: organizer.id, status: 'published' })
         .returning('id');
-      await knex('showtimes').insert(
-        showtimes.map((s) => ({
+      for (const s of showtimes) {
+        // S-07: suất mới mặc định là nháp; suất demo được tạo kèm sơ đồ ghế (S-05) rồi mở bán.
+        const [showtime] = await knex('showtimes').insert({
           event_id: row.id,
           starts_at: at(s.days, s.hour),
           price: s.price,
           capacity: s.capacity,
-        }))
-      );
+        }).returning('id');
+        await seedSeatMap(showtime.id, s.capacity);
+        await knex('showtimes').where({ id: showtime.id }).update({ status: 'on_sale' });
+      }
       created += 1;
     }
 

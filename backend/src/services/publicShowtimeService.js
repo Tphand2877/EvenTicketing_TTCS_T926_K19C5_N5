@@ -59,6 +59,7 @@ const createPublicShowtimeService = ({ source = repository, pageCache = cache } 
     const row = await source.seatMap(id);
     if (!row) throw new PublicQueryError(404, 'Không tìm thấy suất diễn.');
     if (!row.on_sale) throw new PublicQueryError(409, 'Suất diễn không mở bán.');
+    if (row.has_unmapped_hold) throw new PublicQueryError(503, 'Dữ liệu ghế chưa sẵn sàng.');
     return { showtime_id: row.showtime_id, seats: row.seats };
   },
 });

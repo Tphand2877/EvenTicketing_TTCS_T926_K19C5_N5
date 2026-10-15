@@ -1,28 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
-
-const getRemainingMs = (expiresAt, serverOffsetMs = 0) => {
-  const deadline = Date.parse(expiresAt)
-  if (!Number.isFinite(deadline)) return 0
-  return Math.max(deadline - (Date.now() + serverOffsetMs), 0)
-}
+import { getServerNow } from '../../services/apiClient'
 
 /**
- * Đồng hồ giữ chỗ theo thời điểm hết hạn từ máy chủ (SCRUM-172 / T-24).
- *
- * Mỗi tick tính lại từ deadline và độ lệch đồng hồ đo khi tải sơ đồ. Không
- * đếm lùi theo số tick, nên tab bị ẩn hoặc đồng hồ máy khách lệch không làm sai.
+ * Tính từ deadline máy chủ và đồng hồ monotonic để tab ẩn hoặc đổi giờ thiết bị
+ * không làm kéo dài lượt giữ. Offset lấy từ response S-14 khi có; nếu không,
+ * dùng đồng hồ đồng bộ qua HTTP Date của main.
  *
  * @param {{ expiresAt: string, serverOffsetMs?: number, onExpire?: () => void }} props
  */
-export default function SeatHoldTimer({ expiresAt, serverOffsetMs = 0, onExpire }) {
-  const [remainingMs, setRemainingMs] = useState(() => getRemainingMs(expiresAt, serverOffsetMs))
+export default function SeatHoldTimer({ expiresAt, serverOffsetMs, onExpire }) {
+  const [remainingMs, setRemainingMs] = useState(0)
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
 
   useEffect(() => {
     let expired = false
+    const deadline = Date.parse(expiresAt)
+    const serverNow = Number.isFinite(serverOffsetMs) ? Date.now() + serverOffsetMs : getServerNow()
+    const monotonicStart = performance.now()
     const tick = () => {
-      const ms = getRemainingMs(expiresAt, serverOffsetMs)
+      const ms = Number.isFinite(deadline)
+        ? Math.max(deadline - (serverNow + performance.now() - monotonicStart), 0)
+        : 0
       setRemainingMs(ms)
       if (ms === 0 && !expired) {
         expired = true

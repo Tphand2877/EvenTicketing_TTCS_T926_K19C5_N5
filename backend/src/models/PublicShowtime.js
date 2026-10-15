@@ -52,20 +52,35 @@ const createPublicShowtimeRepository = (database) => ({
         WHERE (h.status = 'active' AND h.expires_at > statement_timestamp())
           OR h.status IN ('pending_payment', 'confirmed')
         GROUP BY h.seat_id
-      ), sold AS (
-        SELECT DISTINCT v.seat_id FROM public_sold_seats v
-        JOIN target t ON t.id = v.showtime_id AND t.on_sale
+      ), order_allocations AS (
+        SELECT allocation.seat_id, bool_or(payment_order.status = 'paid') AS sold
+        FROM orders payment_order
+        JOIN order_items allocation ON allocation.order_id = payment_order.id
+        JOIN seats allocated_seat ON allocated_seat.id = allocation.seat_id
+        JOIN target t ON t.id = allocated_seat.showtime_id AND t.on_sale
+        WHERE allocation.released_at IS NULL
+        GROUP BY allocation.seat_id
       ), states AS (
         SELECT s.id, s.row_label AS row, s.seat_number AS number,
           s.category_id, c.name AS category, (to_jsonb(c)->>'price')::numeric AS price,
-          CASE WHEN v.seat_id IS NOT NULL OR h.sold THEN 'sold'
-            WHEN h.seat_id IS NOT NULL THEN 'held' ELSE 'available' END AS status
+          CASE WHEN v.sold OR h.sold THEN 'sold'
+            WHEN h.seat_id IS NOT NULL OR v.seat_id IS NOT NULL THEN 'held' ELSE 'available' END AS status
         FROM seats s JOIN target t ON t.id = s.showtime_id AND t.on_sale
         LEFT JOIN seat_categories c ON c.id = s.category_id AND c.showtime_id = s.showtime_id
         LEFT JOIN holds h ON h.seat_id = s.id
-        LEFT JOIN sold v ON v.seat_id = s.id
+        LEFT JOIN order_allocations v ON v.seat_id = s.id
       )
       SELECT t.id AS showtime_id, t.on_sale,
+        EXISTS (
+          SELECT 1 FROM seat_holds live_hold
+          WHERE live_hold.showtime_id = t.id
+            AND live_hold.status = 'active'
+            AND live_hold.expires_at > statement_timestamp()
+            AND (
+              SELECT COUNT(*) FROM seat_hold_seats allocation
+              WHERE allocation.hold_id = live_hold.id
+            ) <> live_hold.quantity
+        ) AS has_unmapped_hold,
         COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY s.row, s.number, s.id) FROM states s), '[]'::jsonb) AS seats
       FROM target t`, [id]);
     return rows[0];

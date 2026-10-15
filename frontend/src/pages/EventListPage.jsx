@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import EventListView from '../components/event/EventListView'
@@ -6,41 +6,99 @@ import { CATEGORIES, getErrorMessage } from '../components/event/eventFormat'
 import { getEvents } from '../services/eventService'
 
 const ALL = 'Tất cả'
-const PAGE_SIZE = 12
+const PAGE_SIZE = 20
 
+/**
+ * SCRUM-162 / S-08 (T-18): Trang danh sách sự kiện đang mở bán
+ * - AC1: Chưa đăng nhập vẫn thấy danh sách sự kiện kèm suất gần nhất, sắp theo ngày diễn
+ * - AC4: Khi có hơn 20 sự kiện, cuộn xuống cuối tự động tải thêm trang tiếp theo (infinite scroll)
+ */
 export default function EventListPage() {
   const [searchInput, setSearchInput] = useState('')
   const [query, setQuery]             = useState('')
   const [category, setCategory]       = useState(ALL)
   const [page, setPage]               = useState(1)
 
-  const [events, setEvents]         = useState([])
-  const [pagination, setPagination] = useState(null)
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
+  const [events, setEvents]           = useState([])
+  const [pagination, setPagination]   = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError]             = useState(null)
 
-  const loadEvents = useCallback(async () => {
-    setLoading(true)
+  const sentinelRef = useRef(null)
+
+  const loadEvents = useCallback(async (targetPage = 1, append = false) => {
+    if (append) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
     setError(null)
     try {
       const data = await getEvents({
         q: query || undefined,
         category: category === ALL ? undefined : category,
-        page,
+        page: targetPage,
         limit: PAGE_SIZE,
       })
-      setEvents(data.events)
+
+      if (append) {
+        setEvents((prev) => {
+          const existingIds = new Set(prev.map((e) => e.id))
+          const newItems = (data.events || []).filter((e) => !existingIds.has(e.id))
+          return [...prev, ...newItems]
+        })
+      } else {
+        setEvents(data.events || [])
+      }
       setPagination(data.pagination)
     } catch (err) {
       setError(getErrorMessage(err, 'Không tải được danh sách sự kiện.'))
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }, [query, category, page])
+  }, [query, category])
 
+  // Tải lại trang đầu khi thay đổi bộ lọc hoặc từ khóa tìm kiếm
   useEffect(() => {
-    loadEvents()
+    setPage(1)
+    loadEvents(1, false)
   }, [loadEvents])
+
+  // AC4: Khi cuộn xuống cuối và còn trang tiếp theo, tự động tải thêm trang tiếp theo
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0]
+        if (
+          first.isIntersecting &&
+          !loading &&
+          !loadingMore &&
+          pagination &&
+          page < pagination.totalPages
+        ) {
+          const nextPage = page + 1
+          setPage(nextPage)
+          loadEvents(nextPage, true)
+        }
+      },
+      { rootMargin: '250px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loading, loadingMore, pagination, page, loadEvents])
+
+  const handleManualLoadMore = () => {
+    if (loading || loadingMore || !pagination || page >= pagination.totalPages) return
+    const nextPage = page + 1
+    setPage(nextPage)
+    loadEvents(nextPage, true)
+  }
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -69,7 +127,7 @@ export default function EventListPage() {
               gần bạn
             </h1>
             <p className="text-white/70 text-lg mb-8">
-              Hàng trăm sự kiện đang chờ bạn mỗi tuần
+              Hàng trăm sự kiện và suất diễn đang mở bán mỗi tuần
             </p>
 
             {/* Search bar */}
@@ -94,7 +152,7 @@ export default function EventListPage() {
               </div>
               <button
                 type="submit"
-                className="bg-gradient-to-r from-pink-500 to-orange-500 hover:from-pink-600 hover:to-orange-600 text-white px-6 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-pink-500/30"
+                className="bg-gradient-to-r from-pink-500 to-orange-500 hover:from-pink-600 hover:to-orange-600 text-white px-6 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-pink-500/30 active:scale-95"
               >
                 Tìm
               </button>
@@ -127,36 +185,45 @@ export default function EventListPage() {
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900">
-              {query ? `Kết quả cho "${query}"` : 'Sự kiện nổi bật'}
+              {query ? `Kết quả cho "${query}"` : 'Sự kiện nổi bật đang mở bán'}
               {pagination && (
                 <span className="ml-2 text-sm font-normal text-gray-400">
-                  ({pagination.total} sự kiện)
+                  ({events.length} / {pagination.total} sự kiện)
                 </span>
               )}
             </h2>
           </div>
 
-          <EventListView events={events} loading={loading} error={error} onRetry={loadEvents} />
+          <EventListView
+            events={events}
+            loading={loading && events.length === 0}
+            error={error}
+            onRetry={() => loadEvents(1, false)}
+          />
 
-          {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 mt-10">
-              <button
-                onClick={() => setPage((p) => p - 1)}
-                disabled={page <= 1 || loading}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 disabled:opacity-40"
-              >
-                &larr; Trước
-              </button>
-              <span className="text-sm text-gray-500">
-                Trang {pagination.page} / {pagination.totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page >= pagination.totalPages || loading}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 disabled:opacity-40"
-              >
-                Sau &rarr;
-              </button>
+          {/* AC4: Vùng sentinel cuộn xuống dưới cùng để tải thêm */}
+          {pagination && page < pagination.totalPages && (
+            <div ref={sentinelRef} className="py-8 flex flex-col items-center justify-center gap-3">
+              {loadingMore ? (
+                <div className="flex items-center gap-2 text-sm text-pink-600">
+                  <div className="w-5 h-5 border-2 border-pink-200 border-t-pink-600 rounded-full animate-spin" />
+                  <span>Đang tải thêm sự kiện...</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleManualLoadMore}
+                  className="px-6 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-sm font-semibold text-gray-700 shadow-sm transition-all"
+                >
+                  Cuộn xuống hoặc bấm để tải thêm
+                </button>
+              )}
+            </div>
+          )}
+
+          {pagination && page >= pagination.totalPages && events.length > 0 && (
+            <div className="text-center py-8 text-xs text-gray-400">
+              &bull; Đã hiển thị tất cả sự kiện đang mở bán &bull;
             </div>
           )}
         </section>
