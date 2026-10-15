@@ -5,15 +5,52 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
-const { paymentRouter } = require('./routes/paymentRoutes');
+const { paymentRouter, rawWebhookParser } = require('./routes/paymentRoutes');
 const { paymentWebhookRouter } = require('./routes/paymentWebhookRoutes');
+const { verifyWebhookSignature } = require('./middleware/webhookSignatureMiddleware');
+const { handlePaymentWebhook } = require('./controllers/paymentController');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
+
+// ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
+// Mount TRƯỚC routes để bắt được cả các route bị chặn bởi deny-by-default (T-08)
+app.use(auditAccessDenials);
+
+// ─── SCRUM-212 [S-21 (T-48, T-49)]: Webhook thanh toán ──────────────────────
+// Mount TRƯỚC express.json() để kiểm tra chữ ký trên raw stream trước khi đọc/parse nội dung JSON
+const isMomoWebhook = (req) => {
+  if (req.headers['x-signature']) return false;
+  const body = req.body;
+  if (Buffer.isBuffer(body) && body.includes('partnerCode')) return true;
+  return false;
+};
+
+const handleWebhookIntercept = (req, res, next) => {
+  if (!isMomoWebhook(req)) {
+    return verifyWebhookSignature(req, res, (err) => {
+      if (err) return next(err);
+      return handlePaymentWebhook(req, res, next);
+    });
+  }
+  // MoMo IPN (S-20 / T-46): giữ rawBody dạng Buffer cho paymentWebhookRouter
+  req.rawBody = req.body;
+  try {
+    req.body = JSON.parse(req.body.toString('utf8'));
+  } catch {
+    // Để paymentWebhookRouter xử lý giải mã và validate payload
+  }
+  next();
+};
+
+app.use('/api/payments/webhook', rawWebhookParser, handleWebhookIntercept);
+app.use('/payments/webhook', rawWebhookParser, handleWebhookIntercept);
+
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
 app.use(express.json({
   limit: '5mb',
@@ -25,10 +62,6 @@ app.use(express.json({
   },
 }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
-
-// ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
-// Mount TRƯỚC routes để bắt được cả các route bị chặn bởi deny-by-default (T-08)
-app.use(auditAccessDenials);
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
