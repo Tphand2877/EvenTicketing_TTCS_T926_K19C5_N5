@@ -6,6 +6,7 @@ const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
 const { paymentRouter, rawWebhookParser } = require('./routes/paymentRoutes');
+const { paymentWebhookRouter } = require('./routes/paymentWebhookRoutes');
 const { verifyWebhookSignature } = require('./middleware/webhookSignatureMiddleware');
 const { handlePaymentWebhook } = require('./controllers/paymentController');
 const { auditAccessDenials } = require('./middleware/auditLogger');
@@ -43,6 +44,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
 app.use('/api/payments', paymentRouter);   // S-18 / T-41
+app.use('/api/payments', paymentWebhookRouter); // T-46 delegates verification/settlement to T-42
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
