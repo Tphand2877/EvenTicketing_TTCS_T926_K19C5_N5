@@ -34,14 +34,28 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     await mockDatabase('users').insert(Array.from({ length: 25 }, (_, i) => ({
       id: i + 1, email: `s12-${i}@example.test`, password_hash: 'fixture', role_id: 1, is_active: true,
     })));
-    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test' });
+    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test', status: 'published' });
     await mockDatabase('showtimes').insert([
       { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
       { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
+    await mockDatabase.raw('ALTER TABLE seat_categories ADD COLUMN price integer');
+    await mockDatabase('seat_categories').insert([
+      { id: 1, showtime_id: 1, name: 'Standard', price: 100000 },
+      { id: 2, showtime_id: 2, name: 'Standard', price: 100000 },
+    ]);
+    await mockDatabase('seats').insert([
+      { id: 1, showtime_id: 1, row_label: 'A', seat_number: 1, category_id: 1 },
+      { id: 2, showtime_id: 1, row_label: 'A', seat_number: 2, category_id: 1 },
+      { id: 3, showtime_id: 1, row_label: 'A', seat_number: 3, category_id: 1 },
+      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: 2 },
+    ]);
   }, 30000);
   beforeEach(async () => {
     await mockDatabase('seat_holds').del();
+    await mockDatabase('order_items').del();
+    await mockDatabase('orders').del();
+    await mockDatabase('showtimes').update({ status: 'on_sale', starts_at: '2099-01-01T00:00:00Z' });
   });
   afterAll(async () => {
     await mockDatabase.schema.dropSchemaIfExists(schema, true);
@@ -105,6 +119,29 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     expect((await request(app).post('/api/showtimes/1/holds').set('Authorization', token(4)).send({ quantity: 1 })).status).toBe(409);
     expect(await service.releaseHold({ holdId: pending.id, userId: 2 })).toBe('not_found');
   });
+  test('UUID order allocation joins its text hold ID without double counting a legacy order ID', async () => {
+    const orderId = crypto.randomUUID();
+    await mockDatabase('orders').insert({
+      id: orderId, user_id: 2, status: 'pending', total_amount: 100000,
+      expires_at: '2099-01-01T00:00:00Z',
+    });
+    await mockDatabase('order_items').insert({
+      order_id: orderId, seat_id: 4, category_name: 'Standard', unit_price: 100000,
+    });
+    await mockDatabase('seat_holds').insert([
+      {
+        id: crypto.randomUUID(), showtime_id: 2, user_id: 2, quantity: 1,
+        status: 'pending_payment', order_id: orderId, expires_at: new Date(0),
+      },
+      {
+        id: crypto.randomUUID(), showtime_id: 2, user_id: 3, quantity: 1,
+        status: 'confirmed', order_id: 'legacy-order-reference', expires_at: new Date(0),
+      },
+    ]);
+    expect(await service.getAvailability({ showtimeId: 2, capacity: 10 })).toEqual({
+      capacity: 10, held: 2, available: 8,
+    });
+  });
   test('20 concurrent buyers get exactly one allocation of the expired final place', async () => {
     const old = await createHold();
     await expire(old.id);
@@ -160,10 +197,192 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     } finally { await job.stop(); }
   });
   test('Migration rollback/reapply works on PostgreSQL', async () => {
+    const seatMapMigration = require('../src/migrations/007_create_seat_hold_seats');
     const migration = require('../src/migrations/006_create_seat_holds');
+    await seatMapMigration.down(mockDatabase);
     await migration.down(mockDatabase);
     expect(await mockDatabase.schema.hasTable('seat_holds')).toBe(false);
     await migration.up(mockDatabase);
     expect(await mockDatabase.schema.hasTable('seat_holds')).toBe(true);
+    await seatMapMigration.up(mockDatabase);
+  });
+
+  test('S-10 T-23: choosing seats creates one shared DB deadline and the public map shows them held', async () => {
+    const first = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2] });
+    expect(first.status).toBe(201);
+    expect(first.body.data.hold).toMatchObject({
+      showtimeId: 1,
+      seatIds: [1, 2],
+      quantity: 2,
+    });
+    expect(Number.isFinite(Date.parse(first.body.data.hold.expiresAt))).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2, 3] });
+    expect(second.status).toBe(200);
+    expect(second.body.data.hold.id).toBe(first.body.data.hold.id);
+    expect(second.body.data.hold.expiresAt).toBe(first.body.data.hold.expiresAt);
+
+    const map = await request(app).get('/api/showtimes/1/seats');
+    expect(map.status).toBe(200);
+    expect(map.body.data.seats.filter((seat) => [1, 2, 3].includes(seat.id))
+      .every((seat) => seat.status === 'held')).toBe(true);
+    const clock = await request(app).get('/api/showtimes/1/server-time');
+    expect(clock.status).toBe(200);
+    expect(Number.isFinite(Date.parse(clock.body.data.serverNow))).toBe(true);
+  });
+
+  test('S-14 T-32: current-hold API restores only the requesting buyer seat IDs and DB deadline', async () => {
+    const created = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [2, 1] });
+    expect(created.status).toBe(201);
+
+    const ownHold = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(2));
+    expect(ownHold.status).toBe(200);
+    expect(ownHold.body.data.hold).toMatchObject({
+      id: created.body.data.hold.id,
+      showtimeId: 1,
+      seatIds: [1, 2],
+      quantity: 2,
+      expiresAt: created.body.data.hold.expiresAt,
+    });
+    expect(Number.isFinite(Date.parse(ownHold.body.data.serverNow))).toBe(true);
+    expect(ownHold.body.data.hold).not.toHaveProperty('userId');
+
+    const anotherBuyer = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(3));
+    expect(anotherBuyer.status).toBe(200);
+    expect(anotherBuyer.body.data.hold).toBeNull();
+  });
+
+  test('S-14 T-32: an expired hold is omitted when the buyer returns', async () => {
+    const created = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2] });
+    await expire(created.body.data.hold.id);
+
+    const response = await request(app)
+      .get('/api/showtimes/1/seat-holds/current')
+      .set('Authorization', token(2));
+    expect(response.status).toBe(200);
+    expect(response.body.data.hold).toBeNull();
+    expect(Number.isFinite(Date.parse(response.body.data.serverNow))).toBe(true);
+  });
+
+  test('S-14 T-32: current-hold API requires authentication', async () => {
+    const response = await request(app).get('/api/showtimes/1/seat-holds/current');
+    expect(response.status).toBe(401);
+  });
+
+  test('S-10 AC2: a sold seat rejects the whole selection without keeping a partial hold', async () => {
+    const orderId = crypto.randomUUID();
+    await mockDatabase('orders').insert({
+      id: orderId, user_id: 1, status: 'paid', total_amount: 100000,
+      expires_at: '2099-01-01T00:00:00Z',
+    });
+    await mockDatabase('order_items').insert({
+      order_id: orderId, seat_id: 2, category_name: 'Standard', unit_price: 100000,
+    });
+    const response = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2] });
+    expect(response.status).toBe(409);
+    expect(await mockDatabase('seat_holds').where({ showtime_id: 1, user_id: 2 })).toHaveLength(0);
+    expect(await mockDatabase('seat_hold_seats').where({ showtime_id: 1 })).toHaveLength(0);
+    const legacy = await request(app)
+      .post('/api/showtimes/1/holds')
+      .set('Authorization', token(3))
+      .send({ quantity: 1 });
+    expect(legacy.status).toBe(409);
+    const availability = await request(app).get('/api/showtimes/1/availability');
+    expect(availability.body.data.available).toBe(0);
+  });
+
+  test('S-10: an unassigned legacy quantity hold blocks seat-specific holds until it expires', async () => {
+    await createHold(3);
+    expect((await request(app).get('/api/showtimes/1/seats')).status).toBe(503);
+    const response = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1] });
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/chưa gắn với mã ghế/i);
+    expect(await mockDatabase('seat_hold_seats').where({ showtime_id: 1 })).toHaveLength(0);
+  });
+
+  test('S-10: the legacy quantity endpoint cannot add an unlocated hold beside seat-specific holds', async () => {
+    const held = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1] });
+    expect(held.status).toBe(201);
+
+    const legacy = await request(app)
+      .post('/api/showtimes/1/holds')
+      .set('Authorization', token(3))
+      .send({ quantity: 1 });
+    expect(legacy.status).toBe(409);
+    expect(legacy.body.message).toMatch(/đang dùng giữ chỗ theo mã ghế/i);
+  });
+
+  test('S-10 AC4: a closed showtime rejects seat holds with HTTP 409', async () => {
+    await mockDatabase('showtimes').where({ id: 1 }).update({ status: 'closed' });
+    const response = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1] });
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/không còn mở bán/i);
+  });
+
+  test('S-10 NFR: concurrent buyers cannot hold the same seat twice', async () => {
+    const responses = await Promise.all(Array.from({ length: 20 }, (_, i) => request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(i + 2))
+      .send({ seatIds: [1] })));
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(responses.filter((response) => response.status === 409)).toHaveLength(19);
+    expect(await mockDatabase('seat_hold_seats').where({ showtime_id: 1, seat_id: 1 })).toHaveLength(1);
+  });
+
+  test('S-10: removing one held seat keeps the shared deadline; removing the last cancels the group', async () => {
+    const held = await request(app)
+      .post('/api/showtimes/1/seat-holds')
+      .set('Authorization', token(2))
+      .send({ seatIds: [1, 2] });
+    const deadline = held.body.data.hold.expiresAt;
+    const removedOne = await request(app)
+      .delete(`/api/showtimes/1/seat-holds/${held.body.data.hold.id}/seats/1`)
+      .set('Authorization', token(2));
+    expect(removedOne.status).toBe(200);
+    expect(removedOne.body.data.hold).toMatchObject({ seatIds: [2], quantity: 1, expiresAt: deadline });
+
+    const removedLast = await request(app)
+      .delete(`/api/showtimes/1/seat-holds/${held.body.data.hold.id}/seats/2`)
+      .set('Authorization', token(2));
+    expect(removedLast.status).toBe(200);
+    expect(removedLast.body.data.hold).toBeNull();
+    expect((await stored(held.body.data.hold.id)).status).toBe('cancelled');
+  });
+
+  test('S-10 T-22: per-seat migration rolls back and reapplies cleanly', async () => {
+    const migration = require('../src/migrations/007_create_seat_hold_seats');
+    await migration.down(mockDatabase);
+    expect(await mockDatabase.schema.hasTable('seat_hold_seats')).toBe(false);
+    await migration.up(mockDatabase);
+    expect(await mockDatabase.schema.hasTable('seat_hold_seats')).toBe(true);
   });
 });

@@ -130,4 +130,3 @@ describe('SCRUM-179: Simultaneous seat hold attempts', () => {
     expect(await availability()).toEqual({ capacity: 3, held: 3, available: 0 });
   });
 });
-

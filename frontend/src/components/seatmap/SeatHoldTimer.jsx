@@ -1,28 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import { getServerNow } from '../../services/apiClient'
 
-// Tính theo giờ server (không tin đồng hồ máy người dùng) – SCRUM-172
-const getRemainingMs = (expiresAt) => Math.max(new Date(expiresAt).getTime() - getServerNow(), 0)
-
 /**
- * Đồng hồ đếm ngược thời hạn giữ chỗ (SCRUM-84, SCRUM-172)
+ * Tính từ deadline máy chủ và đồng hồ monotonic để tab ẩn hoặc đổi giờ thiết bị
+ * không làm kéo dài lượt giữ. Offset lấy từ response S-14 khi có; nếu không,
+ * dùng đồng hồ đồng bộ qua HTTP Date của main.
  *
- * Mỗi tick tính lại từ `expiresAt` thay vì trừ dần 1 giây, vì trình duyệt
- * làm chậm setInterval khi tab bị ẩn -> trừ dần sẽ lệch so với server.
- * Thời điểm hiện tại lấy từ giờ server (getServerNow) nên chỉnh sai giờ máy
- * người dùng cũng không làm lệch đồng hồ.
- *
- * @param {{ expiresAt: string, onExpire?: () => void }} props
+ * @param {{ expiresAt: string, serverOffsetMs?: number, onExpire?: () => void }} props
  */
-export default function SeatHoldTimer({ expiresAt, onExpire }) {
-  const [remainingMs, setRemainingMs] = useState(() => getRemainingMs(expiresAt))
+export default function SeatHoldTimer({ expiresAt, serverOffsetMs, onExpire }) {
+  const [remainingMs, setRemainingMs] = useState(0)
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
 
   useEffect(() => {
     let expired = false
+    const deadline = Date.parse(expiresAt)
+    const serverNow = Number.isFinite(serverOffsetMs) ? Date.now() + serverOffsetMs : getServerNow()
+    const monotonicStart = performance.now()
     const tick = () => {
-      const ms = getRemainingMs(expiresAt)
+      const ms = Number.isFinite(deadline)
+        ? Math.max(deadline - (serverNow + performance.now() - monotonicStart), 0)
+        : 0
       setRemainingMs(ms)
       if (ms === 0 && !expired) {
         expired = true
@@ -33,7 +32,7 @@ export default function SeatHoldTimer({ expiresAt, onExpire }) {
     const timer = setInterval(tick, 1000)
     tick()
     return () => clearInterval(timer)
-  }, [expiresAt])
+  }, [expiresAt, serverOffsetMs])
 
   const totalSeconds = Math.ceil(remainingMs / 1000)
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0')

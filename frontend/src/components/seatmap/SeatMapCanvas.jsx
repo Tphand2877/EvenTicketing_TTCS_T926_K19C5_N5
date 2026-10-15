@@ -1,5 +1,5 @@
+
 import { useMemo, useState } from 'react'
-import { SEATS_PER_ROW, rowLabel } from './seatUtils'
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.2
@@ -17,45 +17,18 @@ const ZOOM_STEP = 0.15
  */
 export default function SeatMapCanvas({
   seats: rawSeats,
-  capacity,
-  takenCount = 0,
-  selected = [],
+  selectedSeatIds = [],
   maxSelect = 10,
-  onChange,
+  onSeatToggle,
   disabled = false,
   onRefresh,
 }) {
   const [zoom, setZoom] = useState(1.0)
 
-  // Chuẩn hóa danh sách ghế: hỗ trợ cả mảng seats từ API T-19 hoặc fallback capacity
+  // Chỉ hiển thị ghế có ID thật từ inventory; ghế mô phỏng không thể giữ an toàn.
   const normalizedSeats = useMemo(() => {
-    if (Array.isArray(rawSeats) && rawSeats.length > 0) {
-      return rawSeats
-    }
-
-    if (Number.isInteger(capacity) && capacity > 0) {
-      const generated = []
-      const rows = Math.ceil(capacity / SEATS_PER_ROW)
-      for (let r = 0; r < rows; r++) {
-        const row = rowLabel(r)
-        for (let c = 0; c < SEATS_PER_ROW; c++) {
-          const index = r * SEATS_PER_ROW + c
-          if (index >= capacity) break
-          const isHeld = index < takenCount
-          generated.push({
-            id: index + 1,
-            row,
-            number: c + 1,
-            category: 'Standard',
-            status: isHeld ? 'held' : 'available',
-          })
-        }
-      }
-      return generated
-    }
-
-    return []
-  }, [rawSeats, capacity, takenCount])
+    return Array.isArray(rawSeats) ? rawSeats : []
+  }, [rawSeats])
 
   // Nhóm ghế theo hàng (row) để vẽ lưới
   const rowsGrouped = useMemo(() => {
@@ -74,37 +47,13 @@ export default function SeatMapCanvas({
     }))
   }, [normalizedSeats])
 
-  // Tập hợp các ID hoặc seat object đang được chọn
-  const selectedIds = useMemo(() => {
-    const set = new Set()
-    for (const item of selected) {
-      if (typeof item === 'object' && item !== null) {
-        set.add(item.id)
-      } else {
-        set.add(item)
-      }
-    }
-    return set
-  }, [selected])
+  const selectedIds = useMemo(() => new Set(selectedSeatIds.map(Number)), [selectedSeatIds])
 
   const toggleSeat = (seat) => {
-    if (disabled || seat.status !== 'available') return
-
-    const isSelected = selectedIds.has(seat.id)
-    let newSelected
-
-    if (isSelected) {
-      // Bỏ chọn
-      newSelected = selected.filter((item) => (typeof item === 'object' ? item.id !== seat.id : item !== seat.id))
-    } else {
-      if (selected.length >= maxSelect) return
-      // Chọn thêm
-      newSelected = [...selected, seat]
-    }
-
-    if (onChange) {
-      onChange(newSelected)
-    }
+    const isSelected = selectedIds.has(Number(seat.id))
+    if (disabled || (!isSelected && seat.status !== 'available')) return
+    if (!isSelected && selectedIds.size >= maxSelect) return
+    onSeatToggle?.(seat)
   }
 
   const handleZoomIn = () => setZoom((z) => Math.min(MAX_ZOOM, parseFloat((z + ZOOM_STEP).toFixed(2))))
@@ -197,11 +146,11 @@ export default function SeatMapCanvas({
 
               <div className="flex items-center gap-1.5">
                 {seats.map((seat) => {
-                  const isSelected = selectedIds.has(seat.id)
+                  const isSelected = selectedIds.has(Number(seat.id))
                   const isHeld = seat.status === 'held'
                   const isSold = seat.status === 'sold'
                   const isAvailable = seat.status === 'available'
-                  const full = !isSelected && selected.length >= maxSelect
+                  const full = !isSelected && selectedIds.size >= maxSelect
 
                   let statusText = 'Còn trống'
                   let symbol = '○'
@@ -211,19 +160,19 @@ export default function SeatMapCanvas({
                     statusText = 'Đã bán'
                     symbol = '✕'
                     stateClass = 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed opacity-80'
+                  } else if (isSelected) {
+                    statusText = 'Bạn đang giữ'
+                    symbol = '✓'
+                    stateClass = 'bg-pink-600 border-pink-600 text-white font-bold ring-2 ring-pink-300 shadow-sm'
                   } else if (isHeld) {
                     statusText = 'Đang có người giữ'
                     symbol = '⏳'
                     stateClass = 'bg-amber-100 border-amber-300 text-amber-800 cursor-not-allowed opacity-90'
-                  } else if (isSelected) {
-                    statusText = 'Đang chọn'
-                    symbol = '✓'
-                    stateClass = 'bg-pink-600 border-pink-600 text-white font-bold ring-2 ring-pink-300 shadow-sm'
                   } else if (full || disabled) {
                     stateClass = 'bg-white border-gray-200 text-gray-300 cursor-not-allowed'
                   }
 
-                  const isButtonDisabled = disabled || !isAvailable || (full && !isSelected)
+                  const isButtonDisabled = disabled || isSold || (!isAvailable && !isSelected) || full
 
                   return (
                     <button
@@ -256,6 +205,7 @@ export default function SeatMapCanvas({
           ))}
         </div>
       </div>
+
     </div>
   )
 }

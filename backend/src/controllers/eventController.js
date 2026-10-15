@@ -453,4 +453,3 @@ module.exports = {
   holdSeats,
   releaseHold,
 };
-

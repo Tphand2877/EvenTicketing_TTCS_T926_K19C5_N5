@@ -37,4 +37,3 @@ export const formatDateTime = (iso) =>
 
 export const getErrorMessage = (err, fallback = 'Đã có lỗi xảy ra, vui lòng thử lại.') =>
   err?.response?.data?.message || fallback
-

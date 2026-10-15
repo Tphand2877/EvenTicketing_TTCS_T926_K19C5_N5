@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getAvailability, getSeatMap, holdSeats, releaseHold } from '../../services/eventService'
+import {
+  getAvailability, getCurrentSeatHold, getSeatHoldServerTime,
+  getSeatMap, holdSeatIds, releaseHold, releaseSeat,
+} from '../../services/eventService'
 import SeatHoldTimer from '../seatmap/SeatHoldTimer'
 import SeatLegend from '../seatmap/SeatLegend'
 import SeatMapCanvas from '../seatmap/SeatMapCanvas'
@@ -10,179 +13,175 @@ import ShowtimeList from './ShowtimeList'
 import { formatDateTime, formatPrice, getCategoryStyle, getErrorMessage } from './eventFormat'
 
 const MAX_TICKETS = 10
-const FALLBACK_SEAT_MAP_MAX_CAPACITY = 300
 
 /**
  * Chi tiết sự kiện + khung đặt vé (SCRUM-80, SCRUM-84, SCRUM-165 / S-09)
  */
 export default function EventDetail({ event, showtimes }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { color, emoji } = getCategoryStyle(event.category)
 
-  const initialShowtimeId = (() => {
-    const params = new URLSearchParams(location.search)
-    const stId = params.get('showtimeId')
-    if (stId && /^\d+$/.test(stId)) {
-      const parsed = Number(stId)
-      return showtimes.some((s) => s.id === parsed) ? parsed : null
-    }
-    return null
-  })()
+  const selectedId = useMemo(() => {
+    const requestedId = new URLSearchParams(location.search).get('showtimeId')
+    return showtimes.find((showtime) => String(showtime.id) === requestedId)?.id ?? null
+  }, [location.search, showtimes])
 
-  const [selectedId, setSelectedId]         = useState(initialShowtimeId)
-
-  const [quantity, setQuantity]             = useState(1)
-  const [seats, setSeats]                   = useState([])
   const [availability, setAvailability]     = useState(null)
   const [seatMap, setSeatMap]               = useState(null)
   const [seatMapStatus, setSeatMapStatus]   = useState('idle') // 'idle' | 'loading' | 'loaded' | 'not_on_sale' | 'unavailable'
+  const [statusForId, setStatusForId]       = useState(null)
   const [hold, setHold]                     = useState(null)
   const [busy, setBusy]                     = useState(false)
+  const [busySeatId, setBusySeatId]         = useState(null)
+  const [clockOffsetMs, setClockOffsetMs]   = useState(0)
   const [message, setMessage]               = useState(null)
+  const mapRequestId = useRef(0)
 
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
   const selectedShowtime = showtimes.find((s) => s.id === selectedId)
-
-  const refreshAvailability = useCallback(async (showtimeId) => {
-    try {
-      setAvailability(await getAvailability(showtimeId))
-    } catch {
-      setAvailability(null)
-    }
-  }, [])
+  const visibleStatus = selectedId && statusForId !== selectedId ? 'loading' : seatMapStatus
+  const activeHold = hold && Number(hold.showtimeId) === Number(selectedId) ? hold : null
 
   const refreshSeatMap = useCallback(async (showtimeId) => {
-    if (!showtimeId) return
+    const requestId = ++mapRequestId.current
+    setStatusForId(showtimeId)
     setSeatMapStatus('loading')
+    const startedAt = Date.now()
     try {
-      const data = await getSeatMap(showtimeId)
-      if (data && Array.isArray(data.seats) && data.seats.length > 0) {
-        setSeatMap(data.seats)
+      let current = null
+      let serverNow
+      let mapData
+      let sampledAt
+      if (isAuthenticated) {
+        current = await getCurrentSeatHold(showtimeId)
+        sampledAt = Date.now()
+        if (requestId !== mapRequestId.current) return
+        serverNow = current.serverNow
+        mapData = await getSeatMap(showtimeId)
+      } else {
+        serverNow = await getSeatHoldServerTime(showtimeId)
+        sampledAt = Date.now()
+        mapData = await getSeatMap(showtimeId)
+      }
+      if (requestId !== mapRequestId.current) return
+      const serverMs = Date.parse(serverNow)
+      const offset = Number.isFinite(serverMs) ? serverMs - (startedAt + sampledAt) / 2 : 0
+      setClockOffsetMs(offset)
+      setHold(current?.hold ? { ...current.hold, serverOffsetMs: offset } : null)
+      if (Array.isArray(mapData?.seats) && mapData.seats.length > 0) {
+        setSeatMap(mapData.seats)
         setSeatMapStatus('loaded')
       } else {
-        // Suất diễn chưa nạp sơ đồ ghế (AC3: hiện thông báo chưa mở bán, không hiện lưới rỗng)
         setSeatMap(null)
         setSeatMapStatus('not_on_sale')
       }
-    } catch (err) {
+    } catch (error) {
+      if (requestId !== mapRequestId.current) return
       setSeatMap(null)
-      const status = err?.response?.status
-      if (status === 409 || status === 404) {
-        // Suất không mở bán (nháp / đã đóng / đã bắt đầu) hoặc không tồn tại: thông báo chưa mở bán (AC3)
-        setSeatMapStatus('not_on_sale')
-      } else {
-        // 503 (dữ liệu sơ đồ theo ghế chưa sẵn sàng) hoặc lỗi mạng: KHÔNG chặn người mua,
-        // quay về giữ chỗ theo số lượng (fallback) như trước khi có sơ đồ ghế thật.
-        setSeatMapStatus('unavailable')
-      }
+      setHold(null)
+      setSeatMapStatus([404, 409].includes(error?.response?.status) ? 'not_on_sale' : 'unavailable')
     }
-  }, [])
+  }, [isAuthenticated])
 
   useEffect(() => {
-    if (selectedId) {
-      refreshAvailability(selectedId)
-      refreshSeatMap(selectedId)
-    } else {
-      setSeatMap(null)
+    mapRequestId.current += 1
+    setSeatMap(null)
+    setHold(null)
+    setAvailability(null)
+    setMessage(null)
+    if (!selectedId) {
+      setStatusForId(null)
       setSeatMapStatus('idle')
+      return undefined
     }
-  }, [selectedId, refreshAvailability, refreshSeatMap])
+    if (authLoading) {
+      setStatusForId(selectedId)
+      setSeatMapStatus('loading')
+      return undefined
+    }
+    refreshSeatMap(selectedId)
+    const requestId = mapRequestId.current
+    getAvailability(selectedId).then((value) => {
+      if (mapRequestId.current === requestId) setAvailability(value)
+    }).catch(() => {
+      if (mapRequestId.current === requestId) setAvailability(null)
+    })
+    return () => { mapRequestId.current += 1 }
+  }, [selectedId, authLoading, refreshSeatMap])
 
   const handleSelect = (id) => {
-    setSelectedId(id)
-    setSeats([])
-    setMessage(null)
+    const params = new URLSearchParams(location.search)
+    params.set('showtimeId', String(id))
+    navigate(`${location.pathname}?${params.toString()}${location.hash}`, { replace: true })
   }
 
-  const isRealSeatMap = seatMapStatus === 'loaded' && Array.isArray(seatMap) && seatMap.length > 0
-  const isFallbackSeatMap =
-    !isRealSeatMap &&
-    seatMapStatus !== 'not_on_sale' &&
-    !!availability &&
-    availability.capacity <= FALLBACK_SEAT_MAP_MAX_CAPACITY
-
-  const maxQuantity = Math.max(Math.min(MAX_TICKETS, availability?.available ?? MAX_TICKETS), 1)
-  const soldOut = availability?.available === 0 || (isRealSeatMap && seatMap.every((s) => s.status !== 'available'))
-  const isMapMode = isRealSeatMap || isFallbackSeatMap
-  const ticketCount = isMapMode ? seats.length : Math.min(quantity, maxQuantity)
-
-  const handleHold = async () => {
+  const handleSeatToggle = async (seat) => {
+    if (!selectedId || busySeatId !== null || visibleStatus !== 'loaded') return
+    const targetShowtimeId = selectedId
+    const currentIds = activeHold?.seatIds || []
+    const isMine = currentIds.some((id) => Number(id) === Number(seat.id))
+    if (!isMine && seat.status !== 'available') return
+    if (!isMine && currentIds.length >= MAX_TICKETS) return
     if (!isAuthenticated) {
-      navigate(`/login?returnTo=${encodeURIComponent(location.pathname)}`)
+      navigate(`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`)
       return
     }
-    setBusy(true)
+    setBusySeatId(seat.id)
     setMessage(null)
     try {
-      const newHold = await holdSeats(selectedId, ticketCount)
-      // SCRUM-175: lưu thêm mã ghế để có thể bỏ từng ghế
-      setHold({
-        ...newHold,
-        seats: isMapMode ? seats.map(seatName) : [],
-        seatIds: isMapMode ? seats : [],
-      })
-      setSeats([])
-    } catch (err) {
-      setMessage({ type: 'error', text: getErrorMessage(err, 'Không thể giữ chỗ, vui lòng thử lại.') })
+      if (isMine) {
+        await releaseSeat(targetShowtimeId, activeHold.id, seat.id)
+      } else {
+        await holdSeatIds(targetShowtimeId, [...currentIds.map(Number), Number(seat.id)])
+      }
+      if (selectedIdRef.current === targetShowtimeId) await refreshSeatMap(targetShowtimeId)
+    } catch (error) {
+      if (selectedIdRef.current === targetShowtimeId) {
+        setMessage({ type: 'error', text: getErrorMessage(error, 'Không thể cập nhật giữ chỗ.') })
+        await refreshSeatMap(targetShowtimeId)
+      }
     } finally {
-      setBusy(false)
-      refreshAvailability(selectedId)
-      refreshSeatMap(selectedId)
+      setBusySeatId(null)
     }
   }
 
   const handleRelease = async () => {
-    setBusy(true)
-    try {
-      await releaseHold(hold.id)
-    } catch {
-      // Hold có thể đã hết hạn ở server – vẫn xóa ở client
-    } finally {
-      setHold(null)
-      setBusy(false)
-      refreshAvailability(selectedId)
-      refreshSeatMap(selectedId)
-    }
-  }
-
-  // SCRUM-175 (T-26): bỏ chọn MỘT ghế đang giữ. Lượt giữ trên main tính theo số lượng,
-  // nên giữ lại (n - 1) chỗ: POST /holds thay lượt giữ cũ của người dùng trong cùng
-  // một transaction, không có khoảng hở để người khác lấy mất chỗ. Bỏ ghế cuối thì huỷ lượt giữ.
-  // Khi API huỷ từng ghế (T-25) lên main thì chuyển sang gọi API đó.
-  const handleReleaseSeat = async (seatId) => {
+    if (!activeHold || busy) return
+    const targetShowtimeId = selectedId
     setBusy(true)
     setMessage(null)
     try {
-      const seatIds = heldSeatIds.filter((s) => s !== seatId)
-      if (seatIds.length === 0) {
-        await releaseHold(hold.id)
-        setHold(null) // hết ghế -> ẩn đồng hồ
-      } else {
-        const updated = await holdSeats(selectedId, seatIds.length)
-        setHold({ ...updated, seatIds, seats: seatIds.map(seatName) })
+      await releaseHold(activeHold.id)
+    } catch (error) {
+      if (selectedIdRef.current === targetShowtimeId) {
+        setMessage({ type: 'error', text: getErrorMessage(error, 'Không thể hủy lượt giữ chỗ.') })
       }
-      setAvailability((prev) => (prev ? { ...prev, available: prev.available + 1 } : prev))
-    } catch (err) {
-      setMessage({ type: 'error', text: getErrorMessage(err, 'Không thể bỏ chọn ghế, vui lòng thử lại.') })
     } finally {
       setBusy(false)
+      if (selectedIdRef.current === targetShowtimeId) await refreshSeatMap(targetShowtimeId)
     }
   }
 
-  const handleExpire = useCallback(() => {
+  const handleExpire = useCallback(async () => {
     setHold(null)
     setMessage({ type: 'error', text: 'Hết thời gian giữ chỗ. Vui lòng chọn lại.' })
-    if (selectedId) {
-      refreshAvailability(selectedId)
-      refreshSeatMap(selectedId)
-    }
-  }, [selectedId, refreshAvailability, refreshSeatMap])
+    if (selectedId) await refreshSeatMap(selectedId)
+  }, [selectedId, refreshSeatMap])
 
-  // SCRUM-175: danh sách ghế đang giữ
-  const heldSeatIds = hold?.seatIds ?? []
-  const heldCount = heldSeatIds.length > 0 ? heldSeatIds.length : (hold?.quantity ?? 0)
-
+  const heldSeatIds = activeHold?.seatIds ?? []
+  const heldSeats = useMemo(() => {
+    if (!activeHold || !seatMap || visibleStatus !== 'loaded') return []
+    const ids = new Set(activeHold.seatIds.map(Number))
+    return seatMap.filter((seat) => ids.has(Number(seat.id)))
+  }, [activeHold, seatMap, visibleStatus])
+  const heldSeatNames = heldSeats.map(seatName)
+  const hasPrices = heldSeats.length === (activeHold?.quantity || 0)
+    && heldSeats.every((seat) => seat.price != null && Number.isFinite(Number(seat.price)))
+  const totalPrice = hasPrices ? heldSeats.reduce((sum, seat) => sum + Number(seat.price), 0) : null
+  const soldOut = visibleStatus === 'loaded' && seatMap?.every((seat) => seat.status !== 'available')
   return (
     <>
       {/* Hero */}
@@ -230,78 +229,50 @@ export default function EventDetail({ event, showtimes }) {
               </div>
             )}
 
-            {/* Khung sơ đồ ghế hoặc thông báo trạng thái */}
-            {selectedShowtime && !hold && (
+            {/* Sơ đồ thật từ T-19; chờ khôi phục hold trước khi hiển thị. */}
+            {selectedShowtime && (
               <>
-                {seatMapStatus === 'loading' && (
+                {visibleStatus === 'loading' && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
                     <div className="inline-block w-8 h-8 border-3 border-pink-200 border-t-pink-600 rounded-full animate-spin mb-2" />
                     <p className="text-sm text-gray-500">Đang tải sơ đồ ghế...</p>
                   </div>
                 )}
-
-                {/* AC3: Suất diễn chưa nạp sơ đồ ghế -> hiện thông báo suất diễn chưa mở bán, KHÔNG hiện lưới rỗng */}
-                {seatMapStatus === 'not_on_sale' && (
-                  <div
-                    role="alert"
-                    className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-800 space-y-2 shadow-sm"
-                  >
+                {visibleStatus === 'not_on_sale' && (
+                  <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-800 space-y-2 shadow-sm">
                     <div className="text-3xl" aria-hidden="true">⚠️</div>
                     <h3 className="font-semibold text-base">Suất diễn chưa mở bán</h3>
-                    <p className="text-xs text-amber-700">
-                      Suất diễn này chưa được nạp sơ đồ ghế hoặc chưa mở bán vé. Vui lòng quay lại sau!
-                    </p>
+                    <p className="text-xs text-amber-700">Suất diễn này chưa được nạp sơ đồ ghế hoặc chưa mở bán vé. Vui lòng quay lại sau!</p>
                   </div>
                 )}
-
-                {/* AC1: Đã có sơ đồ ghế -> vẽ sơ đồ với 3 trạng thái phân biệt màu và ký hiệu */}
-                {isRealSeatMap && (
+                {visibleStatus === 'unavailable' && (
+                  <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-800 space-y-2 shadow-sm">
+                    <h3 className="font-semibold text-base">Chưa tải được sơ đồ ghế</h3>
+                    <p className="text-xs text-amber-700">Vui lòng thử lại khi dữ liệu ghế sẵn sàng.</p>
+                    <button type="button" onClick={() => refreshSeatMap(selectedId)} className="text-sm underline">Thử lại</button>
+                  </div>
+                )}
+                {visibleStatus === 'loaded' && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
-                        <span className="text-xs text-gray-500">
-                          Tối đa {maxQuantity} ghế mỗi lượt &bull; {seatMap.length} ghế
-                        </span>
+                        <span className="text-xs text-gray-500">Tối đa {MAX_TICKETS} ghế mỗi lượt &bull; {seatMap.length} ghế</span>
                       </div>
                       <SeatLegend />
                     </div>
-
                     <SeatMapCanvas
                       seats={seatMap}
-                      selected={seats}
-                      maxSelect={maxQuantity}
-                      onChange={setSeats}
-                      disabled={busy || soldOut}
+                      selectedSeatIds={heldSeatIds}
+                      maxSelect={MAX_TICKETS}
+                      onSeatToggle={handleSeatToggle}
+                      disabled={busy || busySeatId !== null}
                       onRefresh={() => refreshSeatMap(selectedId)}
                     />
                   </div>
                 )}
-
-                {/* Fallback khi chưa có API seatMap thật nhưng có capacity */}
-                {isFallbackSeatMap && (
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
-                        <span className="text-xs text-gray-500">Tối đa {maxQuantity} ghế mỗi lượt</span>
-                      </div>
-                      <SeatLegend />
-                    </div>
-                    <SeatMapCanvas
-                      capacity={availability.capacity}
-                      takenCount={availability.capacity - availability.available}
-                      selected={seats}
-                      maxSelect={maxQuantity}
-                      onChange={setSeats}
-                      disabled={busy || soldOut}
-                      onRefresh={() => refreshAvailability(selectedId)}
-                    />
-                  </div>
-                )}
               </>
-            )}
-          </div>
+            )}          </div>
 
           {/* Booking card */}
           <div>
@@ -312,121 +283,82 @@ export default function EventDetail({ event, showtimes }) {
                 showtimes={showtimes}
                 selectedId={selectedId}
                 onSelect={handleSelect}
-                disabled={!!hold}
+                disabled={!!activeHold}
               />
 
-              {selectedShowtime && !hold && (
+              {selectedShowtime && !activeHold && (
                 <div className="space-y-3">
-                  {seatMapStatus === 'not_on_sale' ? (
+                  {availability && (
+                    <p className="text-xs text-gray-500">Còn <strong>{availability.available}</strong> / {availability.capacity} chỗ</p>
+                  )}
+                  {visibleStatus === 'loaded' && (
+                    <p className="text-sm text-gray-700">
+                      {soldOut ? 'Hiện không còn ghế trống.' : 'Chọn ghế trên sơ đồ để giữ ngay và bắt đầu đồng hồ.'}
+                    </p>
+                  )}
+                  {visibleStatus === 'not_on_sale' && (
                     <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-center">
                       <p className="text-xs font-semibold text-amber-800">Suất diễn chưa mở bán</p>
                       <p className="text-[11px] text-amber-600 mt-0.5">Không thể chọn ghế lúc này.</p>
                     </div>
-                  ) : (
-                    <>
-                      {availability && (
-                        <p className="text-xs text-gray-500">
-                          Còn <strong>{availability.available}</strong> / {availability.capacity} chỗ
-                        </p>
-                      )}
-
-                      {isMapMode ? (
-                        <p className="text-sm text-gray-700">
-                          {seats.length > 0 ? (
-                            <>
-                              Ghế đã chọn: <strong>{seats.map(seatName).join(', ')}</strong>
-                            </>
-                          ) : (
-                            'Hãy chọn ghế trên sơ đồ chỗ ngồi.'
-                          )}
-                        </p>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <label htmlFor="quantity" className="text-sm font-medium text-gray-700">
-                            Số vé
-                          </label>
-                          <select
-                            id="quantity"
-                            value={Math.min(quantity, maxQuantity)}
-                            onChange={(e) => setQuantity(Number(e.target.value))}
-                            disabled={soldOut}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
-                          >
-                            {Array.from({ length: maxQuantity }, (_, i) => i + 1).map((n) => (
-                              <option key={n} value={n}>
-                                {n}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">Tạm tính</span>
-                        <span className="font-bold text-gray-900">
-                          {formatPrice(selectedShowtime.price * ticketCount)}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={handleHold}
-                        disabled={busy || soldOut || ticketCount === 0}
-                        className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        {soldOut ? 'Hết chỗ' : busy ? 'Đang giữ chỗ…' : ticketCount ? `Giữ ${ticketCount} chỗ` : 'Giữ chỗ'}
-                      </button>
-                    </>
                   )}
                 </div>
               )}
 
-              {hold && (
+              {activeHold && (
                 <div className="space-y-3">
                   <p className="text-sm text-gray-700">
-                    Đang giữ <strong>{heldCount}</strong> vé cho suất {formatDateTime(selectedShowtime?.starts_at)}.
+                    Đang giữ <strong>{activeHold.quantity}</strong> vé cho suất {formatDateTime(selectedShowtime?.starts_at)}.
                   </p>
-                  {/* SCRUM-175: danh sách ghế đang giữ, bấm × để bỏ chọn từng ghế */}
                   {heldSeatIds.length > 0 && (
                     <ul className="flex flex-wrap gap-2">
-                      {heldSeatIds.map((seatId) => (
-                        <li
-                          key={seatId}
-                          className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-3 py-1 text-xs font-medium text-pink-700"
-                        >
-                          {seatName(seatId)}
-                          <button
-                            type="button"
-                            onClick={() => handleReleaseSeat(seatId)}
-                            disabled={busy}
-                            aria-label={`Bỏ chọn ghế ${seatName(seatId)}`}
-                            className="ml-1 text-pink-500 hover:text-red-600 disabled:opacity-50"
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
+                      {heldSeatIds.map((seatId) => {
+                        const seat = heldSeats.find((item) => Number(item.id) === Number(seatId))
+                        return (
+                          <li key={seatId} className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-3 py-1 text-xs font-medium text-pink-700">
+                            {seat ? seatName(seat) : `#${seatId}`}
+                            <button
+                              type="button"
+                              onClick={() => seat && handleSeatToggle(seat)}
+                              disabled={busy || busySeatId !== null || !seat}
+                              aria-label={`Bỏ chọn ghế ${seat ? seatName(seat) : seatId}`}
+                              className="ml-1 text-pink-500 hover:text-red-600 disabled:opacity-50"
+                            >
+                              ×
+                            </button>
+                          </li>
+                        )
+                      })}
                     </ul>
                   )}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Tạm tính</span>
-                    <span className="font-bold text-gray-900">
-                      {formatPrice(selectedShowtime.price * heldCount)}
-                    </span>
+                    <span className="font-bold text-gray-900">{formatPrice(totalPrice)}</span>
                   </div>
-                  <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={handleExpire} />
-                  <Link to="/checkout" state={{ hold, event, showtime: selectedShowtime }} className="btn-primary block text-center">
-                    Tiếp tục thanh toán
-                  </Link>
+                  <SeatHoldTimer
+                    expiresAt={activeHold.expiresAt}
+                    serverOffsetMs={clockOffsetMs}
+                    onExpire={handleExpire}
+                  />
+                  {heldSeats.length === activeHold.quantity && (
+                    <Link
+                      to="/checkout"
+                      state={{ hold: { ...activeHold, seats: heldSeatNames, serverOffsetMs: clockOffsetMs }, event, showtime: selectedShowtime }}
+                      className="btn-primary block text-center"
+                    >
+                      Tiếp tục thanh toán
+                    </Link>
+                  )}
                   <button
+                    type="button"
                     onClick={handleRelease}
-                    disabled={busy}
-                    className="w-full text-sm font-medium text-gray-500 hover:text-red-600"
+                    disabled={busy || busySeatId !== null}
+                    className="w-full text-sm font-medium text-gray-500 hover:text-red-600 disabled:opacity-50"
                   >
                     Hủy giữ chỗ
                   </button>
                 </div>
               )}
-
               {message && (
                 <p className={`text-sm ${message.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
                   {message.text}

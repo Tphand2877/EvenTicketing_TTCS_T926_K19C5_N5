@@ -57,6 +57,8 @@ export const getAvailability = async (showtimeId) => {
   return data.data
 }
 
+// ── S-10: seat-specific holds and server clock ───────────────────────────────
+
 /**
  * SCRUM-165 (T-19): Truy vấn toàn bộ trạng thái ghế theo suất diễn trong một lần gọi
  * @param {number|string} showtimeId
@@ -65,6 +67,28 @@ export const getAvailability = async (showtimeId) => {
 export const getSeatMap = async (showtimeId) => {
   const { data } = await apiClient.get(`/showtimes/${showtimeId}/seats`)
   return data.data
+}
+
+export const getSeatHoldServerTime = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/server-time`)
+  return data.data.serverNow
+}
+
+export const getCurrentSeatHold = async (showtimeId) => {
+  const { data } = await apiClient.get(`/showtimes/${showtimeId}/seat-holds/current`)
+  return data.data
+}
+
+export const holdSeatIds = async (showtimeId, seatIds) => {
+  const { data } = await apiClient.post(`/showtimes/${showtimeId}/seat-holds`, { seatIds })
+  return data.data.hold
+}
+
+export const releaseSeat = async (showtimeId, holdId, seatId) => {
+  const { data } = await apiClient.delete(
+    `/showtimes/${showtimeId}/seat-holds/${holdId}/seats/${seatId}`
+  )
+  return data.data.hold
 }
 
 export const holdSeats = async (showtimeId, quantity) => {
@@ -123,5 +147,3 @@ export const closeSales = async (showtimeId) => {
   const { data } = await apiClient.post(`/showtimes/${showtimeId}/close-sales`)
   return data
 }
-
-

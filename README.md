@@ -295,12 +295,20 @@ npm run build
 - `GET /api/events/:id` - Lấy chi tiết thông tin sự kiện và các suất diễn liên quan.
 - `POST /api/events` - Tạo sự kiện mới (Yêu cầu quyền `organizer` hoặc `admin`).
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
-- `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
-- `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+
+- `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
+- `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
+- `GET /api/showtimes/:id/seat-holds/current` - Lấy lượt giữ còn hạn và mã ghế của tài khoản hiện tại (Yêu cầu đăng nhập).
+- `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
+
+- `POST /api/showtimes/:id/holds` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/holds/:holdId` - Hủy giữ chỗ ghế ngồi.
 - `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
 - `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
 - `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
 - `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
+
 
 ### Hệ thống
 - `GET /health` - Health check kiểm tra trạng thái hoạt động của Backend server.
@@ -386,6 +394,7 @@ bảo vệ dữ liệu đã thuộc đơn hàng trước các job dọn đồng 
 Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, CI xanh,
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
+
 
 ## S-18 / T-40: MoMo payment gateway adapter
 
@@ -544,7 +553,69 @@ giữa lúc 20 người đang giữ chỗ.
 
 ---
 
-## 👥 12. Đội ngũ phát triển
+
+## 12. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
+
+T-22 thêm migration `007_create_seat_hold_seats.js`. `seat_holds` là lượt giữ
+chung của một người dùng cho một suất diễn; `seat_hold_seats` liên kết từng mã
+ghế với lượt đó. Thời hạn UTC nằm trên lượt giữ, vì vậy mọi ghế được thêm sau
+đều nhận cùng `expires_at`. Index expiry hiện có của bảng `seat_holds` phục vụ
+job dọn dữ liệu. View `public_seat_holds` chỉ công bố suất diễn, mã ghế, trạng
+thái và thời điểm hết hạn cho truy vấn T-19.
+
+T-23 dùng API mới, giữ nguyên API số lượng cũ của S-12:
+
+```http
+POST /api/showtimes/:id/seat-holds
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"seatIds":[101,102]}
+```
+
+Thành công trả `{data:{hold:{id,showtimeId,seatIds,quantity,expiresAt,serverNow}}}`.
+Mọi ghế trong một request được giữ hoặc bị từ chối cùng nhau. Gửi thêm ghế cho
+cùng lượt giữ sẽ giữ nguyên `expiresAt`; ghế đã bị giữ/bán hoặc suất không còn
+mở bán trả HTTP 409. `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId`
+bỏ một ghế; bỏ ghế cuối cùng sẽ hủy lượt giữ. `SEAT_HOLD_TTL_SECONDS` cấu hình
+thời lượng, mặc định 600 giây.
+
+T-24 tải sơ đồ từ `GET /api/showtimes/:id/seats` của T-19, đo độ lệch giờ qua
+`GET /api/showtimes/:id/server-time`, rồi tính từng nhịp từ `expiresAt` của máy
+chủ. Khi đồng hồ về 0, giao diện tải lại sơ đồ để bỏ trạng thái giữ đã hết hạn.
+
+Các API giữ ghế kiểm tra inventory `seats`, trạng thái bán `showtimes.status`
+và ghế đã bán từ `orders` / `order_items`. Thiếu schema thì trả 503 để không báo
+ghế trống sai. Không tạo view vé rỗng làm giả trạng thái ghế.
+Giao diện chỉ cho giữ seat ID từ sơ đồ thật; khi nguồn dữ liệu ghế lỗi, không
+tạo ghế mô phỏng để gửi giữ chỗ. API số lượng cũ từ chối suất có allocation đơn
+hàng còn hiệu lực; sơ đồ trả 503 khi còn hold số lượng chưa gắn seat ID.
+
+Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chung khi
+thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
+ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
+
+## 13. S-14 / SCRUM-183: Khôi phục lượt giữ khi mở lại trang
+
+T-32 thêm endpoint đã xác thực `GET /api/showtimes/:id/seat-holds/current`.
+Endpoint chỉ trả lượt giữ `active` của người đăng nhập nếu `expires_at` còn sau
+`statement_timestamp()` của PostgreSQL. Kết quả gồm mã ghế cụ thể, `expiresAt`
+và `serverNow`; nếu chưa giữ ghế, người dùng khác đang giữ, hoặc lượt giữ đã
+hết hạn thì `hold` là `null`. API chỉ đọc thời hạn và không dựa vào đồng hồ hay
+danh sách ghế lưu ở trình duyệt.
+
+T-33 lưu `showtimeId` đang chọn trong query của URL, không lưu danh sách ghế.
+Khi mở lại trang hoặc trở lại sau đăng nhập trên thiết bị khác, giao diện gọi
+endpoint hiện tại trước khi tải sơ đồ; nếu còn lượt giữ, các ghế của chính người
+dùng được chọn lại và bộ đếm dùng `expiresAt` cùng `serverNow`. Nếu thời hạn đã
+qua, endpoint không trả hold và sơ đồ T-19 hiển thị ghế là chỗ trống.
+
+Kiểm thử tích hợp PostgreSQL cho T-32 xác nhận mã ghế và hạn giữ của chủ sở hữu,
+không lộ hold cho tài khoản khác, bỏ qua hold hết hạn và yêu cầu đăng nhập.
+
+
+## 👥 14. Đội ngũ phát triển
+
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -554,8 +625,9 @@ giữa lúc 20 người đang giữ chỗ.
 Public showtime cursor pagination, category price ranges, Redis cache (30 seconds),
 and the single-query seat-state API are documented in
 [docs/minh-quang-public-queries.md](docs/minh-quang-public-queries.md).
-Configure `REDIS_URL` using `.env.example`. T-11 (migration 007) and T-15 (migration 008) now exist; per-seat hold/ticket read
-adapters must be connected before these new endpoints are available on staging.
+Configure `REDIS_URL` using `.env.example`. T-11 and T-15 schemas now exist; the
+seat-state query reads real seat holds and unreleased order allocations. Deploy
+the migrations before enabling these endpoints on staging.
 
 ## 🎟️ Sơ đồ ghế còn trống (SCRUM-165 / S-09)
 

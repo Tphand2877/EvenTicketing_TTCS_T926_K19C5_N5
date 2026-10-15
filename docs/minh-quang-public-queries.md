@@ -40,31 +40,28 @@ the previous sprint's contract. FE2/FE3 can integrate these new endpoints withou
 changes to their code in this backend PR. These queries do not allocate seats;
 the hold-writing API must still validate availability atomically.
 
-## Integration dependencies (not yet present on main)
+## Integration dependencies
 
-T-11 / Phi Hùng owns seat/category migrations; T-15 owns the showtime sale enum
-and transition rules. The query adapter currently expects the following names.
-If their implementation differs, update `backend/src/models/PublicShowtime.js`
-or expose equivalent read views; do not create a second competing write model.
+T-11 supplies seat/category migrations; T-15 supplies the showtime sale enum
+and transition rules. The query adapter uses these tables and fields:
 
 | Source | Required fields |
 | --- | --- |
 | `showtimes` | existing fields plus enum `status`: `draft`, `on_sale`, `closed` |
 | `seat_categories` | `id,showtime_id,name`; optional numeric `price` from S-15 (missing/null means unknown price) |
 | `seats` | `id,showtime_id,row_label,seat_number,category_id` |
-| `public_seat_holds` read view | `showtime_id,seat_id,status,expires_at`; active / pending_payment / confirmed / cancelled |
-| `public_sold_seats` read view | `showtime_id,seat_id`; only currently sold tickets |
+| `public_seat_holds` read view | `showtime_id,seat_id,status,expires_at`; supplied by the S-10 T-22 migration from `seat_hold_seats` + `seat_holds` |
+| `orders` and `order_items` | Unreleased allocations are held; a paid order is sold. T-36 owns the tables. |
 
-T-19 explicitly permits simulated hold/ticket sources and ready join points.
-The two read views are those join points. Their owners connect the actual
-per-seat records when T-22/ticket features land. The quantity-only hold table in
-PR #22 has no seat IDs and cannot reliably supply this map: do not invent seat
-IDs or distribute held quantities across arbitrary seats.
+T-22 now supplies `public_seat_holds` from concrete seat mappings and shared hold
+sessions. The quantity-only hold rows in PR #22 still have no seat IDs and are
+not copied into this view: do not invent seat IDs or distribute held quantities
+across arbitrary seats. The endpoint returns 503 while a live hold lacks its
+seat mappings. Sold and pending allocations are read directly from order tables.
 
-This PR deliberately does **not** install empty production views: they would
-incorrectly mark held/sold seats available. Missing tables/columns/views return
-503 (`Dữ liệu suất diễn chưa sẵn sàng.`), with no raw SQL data. Consequently these
-new endpoints cannot pass integrated staging ACs until dependencies are connected.
+Missing tables/columns/views return 503 (`Dữ liệu suất diễn chưa sẵn sàng.`),
+with no raw SQL data. Integrated staging acceptance still requires real data
+and PostgreSQL tests.
 Fixture tables/views exist only in an isolated test schema that is dropped at the
 end of the test suite. They are not migrations or a production sales/booking flow.
 

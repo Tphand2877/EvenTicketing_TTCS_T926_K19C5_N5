@@ -1,4 +1,5 @@
 .env
 node_modules/
 .jest-tmp/
+.jest-cache/
 .seatmap-jest-temp-*/
