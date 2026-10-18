@@ -593,4 +593,14 @@ adapters must be connected before these new endpoints are available on staging.
     - **NFR:** Bảo vệ quyền riêng tư: chỉ chủ đơn (authenticated buyer sở hữu đơn hàng) mới xem được chi tiết đơn (HTTP 403 Forbidden nếu truy cập đơn của người khác).
 
 
+# T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
 
+Chỉ bổ sung `payment_events` và handler chống trùng gọi T-42 của team trong
+cùng transaction. Không bổ sung gateway, schema đơn hàng/thanh toán/vé hoặc
+kịch bản T-47. Xem [docs/T-45-T-46-webhook-receipts.md](docs/T-45-T-46-webhook-receipts.md).
+# T-52: job nhả ghế của đơn quá hạn (Minh Quang)
+
+Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T-42 để đổi đơn
+`pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
+`ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
+Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
