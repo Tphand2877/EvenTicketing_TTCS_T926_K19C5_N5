@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './routes/PrivateRoute'
-import PaymentResultPage from './pages/PaymentResultPage'
+
 // Pages
 import LoginPage       from './pages/LoginPage'
 import RegisterPage    from './pages/RegisterPage'
@@ -13,6 +13,7 @@ import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
+import PaymentResultPage from './pages/PaymentResultPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -38,10 +39,7 @@ export default function App() {
           <Route path="/events"         element={<EventListPage />} />
           <Route path="/events/:id"     element={<EventDetailPage />} />
           <Route path="/showtimes/:id" element={<ShowtimeDetailPage />} />
-<Route
-  path="/payment-result"
-  element={<PaymentResultPage />}
-/>
+
           {/* ── Mock payment gateway (SCRUM-203, flag only) ──── */}
           {MOCK_GATEWAY_ENABLED && (
             <Route
@@ -53,6 +51,9 @@ export default function App() {
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
             <Route path="/checkout" element={<CheckoutPage />} />
+            {/* S-22: MoMo trả người mua về MOMO_REDIRECT_URL (/payment/return?orderId=...) */}
+            <Route path="/payment/return" element={<PaymentResultPage />} />
+            <Route path="/payment-result" element={<PaymentResultPage />} />
           </Route>
 
           {/* ── Organizer-only routes ────────────────────────── */}
