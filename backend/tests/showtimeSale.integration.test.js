@@ -68,9 +68,12 @@ describeDatabase('S-07: mở bán / đóng bán trên PostgreSQL', () => {
       { id: 2, organizer_id: 1, title: 'S07 draft event', venue: 'Test', status: 'draft' },
     ]);
 
-    // Migration 008: suất có sẵn trước S-07 (vốn đã bán được) chuyển thành đang bán
-    await mockDatabase.migrate.down({ directory: MIGRATIONS, name: '009_add_price_to_seat_categories.js' });
-    await mockDatabase.migrate.down({ directory: MIGRATIONS, name: '008_add_showtime_sale_status.js' });
+    // Roll back through migration 008, even when newer migrations have been added.
+    // A legacy showtime must be inserted before 008 introduces the status column.
+    while (await mockDatabase('knex_migrations')
+      .where({ name: '008_add_showtime_sale_status.js' }).first('id')) {
+      await mockDatabase.migrate.down({ directory: MIGRATIONS });
+    }
     await mockDatabase('showtimes').insert({ id: 1, event_id: 1, capacity: 5, starts_at: FUTURE });
     await mockDatabase.migrate.latest({ directory: MIGRATIONS });
     legacyStatus = await statusOf(1);

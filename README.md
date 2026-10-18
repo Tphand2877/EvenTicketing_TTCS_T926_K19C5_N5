@@ -391,7 +391,69 @@ Trước khi đánh dấu Done trên Jira: một thành viên khác duyệt PR, 
 chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. Kết quả unit test
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
-<<<<<<< HEAD
+## S-18 / T-40: MoMo payment gateway adapter
+
+Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
+`captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
+gateway factory. The adapter signs create requests, verifies MoMo's signed
+create response and IPN payload, and normalizes verified results. Repeated
+payment requests for one order use the order ID as MoMo's `requestId`.
+Requests explicitly enable MoMo's one-step `autoCapture`; result codes `0` and
+`9000` normalize as success, while `1000`, `7000`, and `7002` stay pending.
+
+Configure these variables in the repository `.env` for Docker Compose, or in
+`backend/.env` for a direct backend run:
+
+| Variable | Purpose |
+| --- | --- |
+| `PAYMENT_PROVIDER` | Adapter selector; currently `momo` |
+| `MOMO_PARTNER_CODE` | MoMo merchant partner code |
+| `MOMO_ACCESS_KEY` | MoMo access key |
+| `MOMO_SECRET_KEY` | MoMo signing secret; keep it server-side and out of source control |
+| `MOMO_API_BASE_URL` | Defaults to MoMo sandbox `https://test-payment.momo.vn` |
+| `MOMO_REDIRECT_URL` | Buyer return URL after leaving MoMo |
+| `MOMO_IPN_URL` | Public server endpoint that receives MoMo payment notifications |
+
+The IPN URL must be reachable by MoMo. For local testing, use an HTTPS tunnel
+and set its callback URL. Production requires HTTPS callback and return URLs.
+`POST /api/payments/orders/:orderId` starts payment for the authenticated
+owner of a pending order. The server reads the VND total and expiry from the
+stored order, ignores any amount in the request body, rejects paid or expired
+orders with `409`, and atomically claims the order in PostgreSQL before calling
+MoMo. It checks expiry again after MoMo responds and before saving or returning
+the URL. The order UUID is the stable gateway request ID.
+
+Migration `010_add_payment_request_recovery` adds a saved redirect URL, request
+state, claim start time, and a sanitized provider error code. The first
+successful request stores the URL; repeated `POST` calls and
+`GET /api/payments/orders/:orderId` return that same URL without contacting
+MoMo again. Only the atomic claim winner calls the gateway. While that request
+is recent, duplicate callers receive `202` with `status: "processing"` and a
+`Retry-After` header. A provider timeout, invalid response, failed URL save, or
+claim older than two minutes is marked indeterminate on the next payment or
+status request. The API returns `409` with
+`code: "PAYMENT_RECONCILIATION_REQUIRED"` and the order/request IDs; it never
+clears the claim or retries MoMo automatically. Support must verify the request
+in MoMo before deciding how to resolve it. Payment URLs are returned only to
+the order owner and responses use `Cache-Control: no-store`.
+
+Success responses use `data.payment.status` (`ready`, `processing`, or
+`not_started`); failures include a stable top-level `code` for client handling.
+The client can branch on those fields:
+
+```json
+{ "success": true, "data": { "payment": { "status": "ready", "redirectUrl": "https://…" } } }
+{ "success": true, "data": { "payment": { "status": "processing", "retryAfterSeconds": 3 } } }
+{ "success": false, "code": "ORDER_EXPIRED", "message": "Đơn hàng đã hết hạn thanh toán." }
+```
+
+An indeterminate request returns `409` with
+`code: "PAYMENT_RECONCILIATION_REQUIRED"` and `details.gatewayRequestId`, so
+the client can stop retrying and show a support state.
+The checkout page remains a demo until T-37/T-38 connect official order creation
+and server-side totals. Verified payment result and webhook processing remain
+in T-42. Apply the T-36 orders migration before migration 010.
+
 ## 9. S-05: Nạp sơ đồ ghế từ tệp JSON (T-11, T-12)
 
 **T-11:** migration `007` tạo bảng `seat_categories` (hạng ghế theo từng suất diễn,
@@ -578,4 +640,14 @@ adapters must be connected before these new endpoints are available on staging.
       - Hiển thị bảng giá tóm tắt từng hạng ghế (`categoryPricesSummary`) ngay trên sơ đồ ghế.
       - Tạm tính đơn hàng tính chính xác theo tổng giá của từng ghế đã chọn (`totalCalculated`).
 
+# T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
 
+Chỉ bổ sung `payment_events` và handler chống trùng gọi T-42 của team trong
+cùng transaction. Không bổ sung gateway, schema đơn hàng/thanh toán/vé hoặc
+kịch bản T-47. Xem [docs/T-45-T-46-webhook-receipts.md](docs/T-45-T-46-webhook-receipts.md).
+# T-52: job nhả ghế của đơn quá hạn (Minh Quang)
+
+Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T-42 để đổi đơn
+`pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
+`ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
+Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).

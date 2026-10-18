@@ -78,6 +78,7 @@ jobs:
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: eventticketing
+      DB_NAME_TEST: eventticketing_seatmap_test
       DB_USER: postgres
       DB_PASSWORD: postgres
       REDIS_URL: redis://localhost:6379
@@ -86,6 +87,8 @@ jobs:
       RUN_SEAT_HOLD_DB_TESTS: '1'
       RUN_SEAT_MAP_DB_TESTS: '1'
       RUN_SHOWTIME_SALE_DB_TESTS: '1'
+      RUN_PAYMENT_EVENT_DB_TESTS: '1'
+      RUN_ORDER_EXPIRY_DB_TESTS: '1'
 
     services:
       redis:
@@ -128,6 +131,34 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: npm ci
+
+      - name: Create isolated Seat Map test database
+        working-directory: backend
+        run: |
+          node <<'NODE'
+          const { Client } = require('pg');
+          (async () => {
+            if (process.env.DB_NAME_TEST !== 'eventticketing_seatmap_test') {
+              throw new Error('Unexpected Seat Map test database name.');
+            }
+            const client = new Client({
+              host: process.env.DB_HOST,
+              port: Number(process.env.DB_PORT),
+              database: process.env.DB_NAME,
+              user: process.env.DB_USER,
+              password: process.env.DB_PASSWORD,
+            });
+            try {
+              await client.connect();
+              await client.query('CREATE DATABASE eventticketing_seatmap_test');
+            } finally {
+              await client.end();
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
 
       - name: Run backend tests
         working-directory: backend
