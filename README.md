@@ -588,32 +588,19 @@ adapters must be connected before these new endpoints are available on staging.
 > **Epic:** `[E-05]` Payments & Orders  
 > **Phân loại:** MoSCoW-Must | Sprint-3 | Tier-Ready  
 
-### 📌 Chi tiết các Sub-tasks đã hoàn thành:
+### 📌 Chi tiết các Sub-tasks
 
 * **[T-48] Kiểm chữ ký webhook trước khi đọc nội dung (SCRUM-213):**
-  - Endpoint tiếp nhận: `POST /api/payments/webhook` (và alias `/payments/webhook`).
-  - Sử dụng middleware `verifyWebhookSignature` gắn với `express.raw({ type: '*/*' })` được mount **TRƯỚC** `express.json()` toàn cục.
-  - Kiểm tra sự tồn tại của header `X-Signature`. Nếu thiếu hoặc chữ ký không khớp với HMAC-SHA256 của raw buffer:
-    - Lập tức từ chối với HTTP `401 Unauthorized` (`Thiếu chữ ký webhook.` hoặc `Chữ ký webhook không hợp lệ.`).
-    - **TUYỆT ĐỐI không đọc hoặc parse nội dung JSON**, ngăn ngừa hoàn toàn nguy cơ khai thác payload độc hại trước khi xác thực nguồn gốc.
-  - Sử dụng thuật toán so sánh an toàn `crypto.timingSafeEqual` để kháng tấn công trích xuất chữ ký qua độ trễ thời gian (Timing Attacks).
-  - Hỗ trợ cả định dạng hex thô (Mock Gateway) và tiền tố chuẩn quốc tế `sha256=` (GitHub, Stripe).
-  - Chỉ khi chữ ký hợp lệ, server mới tiến hành parse JSON từ buffer vào `req.body` và bàn giao cho `paymentController`.
-
+  - `POST /api/payments/webhook` nhận **bytes thô** qua `express.raw` mount trước `express.json()`; không middleware nào parse JSON của webhook.
+  - Adapter của cổng đang dùng (MoMo, hoặc cổng giả lập khi có T-44) kiểm chữ ký trên đúng các bytes đó (`paymentResultService.verifyWebhook`, T-42). Sai hoặc thiếu chữ ký → `401`, trước khi ghi biên nhận (T-45/T-46) hay đụng tới đơn hàng.
+  - Không có khoá mặc định: khoá lấy từ cấu hình cổng (`MOMO_SECRET_KEY`); thiếu cấu hình thì mọi webhook bị từ chối.
 * **[T-49] Ghi log lần từ chối kèm địa chỉ nguồn (SCRUM-214):**
-  - Mọi lượt truy vấn webhook bị từ chối (401) đều được tự động ghi nhận đầy đủ thông tin:
-    - **Địa chỉ nguồn (Source IP):** Trích xuất ưu tiên từ header `X-Forwarded-For` (hỗ trợ Nginx / Docker / Cloudflare proxy) hoặc connection socket.
-    - **Lý do từ chối (Reason):** Ghi rõ `Thiếu chữ ký webhook (header X-Signature)` hoặc `Chữ ký webhook không hợp lệ`.
-    - **Thời điểm (Timestamp):** Chuẩn ISO 8601 UTC.
-    - **Mã phản hồi & Endpoint:** `401` tại `POST /api/payments/webhook`.
-  - Dữ liệu từ chối được lưu trữ kép:
-    - Bảng `audit_logs` trong cơ sở dữ liệu PostgreSQL.
-    - Tệp nhật ký `logs/audit.log` (best-effort, không làm crash request).
-    - Cảnh báo có cấu trúc ra console: `[Webhook Rejected] ... - IP: ... - Status: 401 - Reason: ...`.
+  - Mỗi lần từ chối ghi **đúng một** dòng `audit_logs` (và `logs/audit.log`) qua `auditAccessDenials`: method, endpoint, `401`, lý do `Chữ ký webhook không hợp lệ`, IP nguồn.
+  - IP nguồn là `req.ip`. Chỉ khi đặt `TRUST_PROXY` (docker-compose đặt `1` vì backend chạy sau Nginx) Express mới đọc `X-Forwarded-For`; chạy trực tiếp thì người gửi không tự khai IP được.
 
-### 🧪 Kiểm thử tự động:
-- Bộ kiểm thử toàn diện: `backend/tests/webhookSignature.test.js` (14/14 test cases Passed 100%).
-- Bao phủ đầy đủ các kịch bản: từ chối khi thiếu signature, từ chối khi chữ ký sai, body hỏng kèm chữ ký sai vẫn trả 401 (chứng minh không đọc nội dung trước), ghi log kèm IP nguồn qua X-Forwarded-For, xác thực thành công 200, và kháng timing attacks.
+### 🧪 Kiểm thử tự động
+- `backend/tests/webhookSignature.test.js`: chạy app thật với adapter MoMo, IPN ký bằng khoá thử. Gồm: thiếu chữ ký, chữ ký sai, sửa số tiền, body JSON hỏng (vẫn 401, chứng minh không qua bộ đọc JSON chung), không có khoá thì không giả mạo được bằng `mock-secret`, đúng một dòng log kèm IP, không tin `X-Forwarded-For` khi chưa bật `TRUST_PROXY` và tin đúng 1 lớp khi bật.
+- Đường xử lý webhook hợp lệ (biên nhận, chống trùng, cập nhật đơn) do `webhookReplay.integration.test.js` (T-47) kiểm trên DB thật.
 
 ---
 

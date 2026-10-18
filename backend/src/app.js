@@ -5,63 +5,34 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
-const { paymentRouter, rawWebhookParser } = require('./routes/paymentRoutes');
+const { paymentRouter } = require('./routes/paymentRoutes');
 const { paymentWebhookRouter } = require('./routes/paymentWebhookRoutes');
-const { verifyWebhookSignature } = require('./middleware/webhookSignatureMiddleware');
-const { handlePaymentWebhook } = require('./controllers/paymentController');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
 const app = express();
-app.set('trust proxy', 1);
+// T-49: chỉ tin X-Forwarded-For khi chạy sau proxy đã biết (Nginx trong docker-compose đặt TRUST_PROXY=1).
+// Không đặt thì req.ip là địa chỉ kết nối thật, người gửi không tự khai IP được.
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
 
+// ─── SCRUM-212 [S-21 / T-48]: webhook thanh toán ───────────────────────────────
+// Giữ nguyên bytes thô, KHÔNG qua bộ đọc JSON chung: adapter của cổng (T-40/T-42) kiểm
+// chữ ký trên đúng các bytes này trước khi bất kỳ nội dung nào được dùng.
+app.use('/api/payments/webhook', express.raw({ type: () => true, limit: '64kb' }), (req, _res, next) => {
+  if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
+  next();
+});
+
+// 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
 // Mount TRƯỚC routes để bắt được cả các route bị chặn bởi deny-by-default (T-08)
 app.use(auditAccessDenials);
-
-// ─── SCRUM-212 [S-21 (T-48, T-49)]: Webhook thanh toán ──────────────────────
-// Mount TRƯỚC express.json() để kiểm tra chữ ký trên raw stream trước khi đọc/parse nội dung JSON
-const isMomoWebhook = (req) => {
-  if (req.headers['x-signature']) return false;
-  const body = req.body;
-  if (Buffer.isBuffer(body) && body.includes('partnerCode')) return true;
-  return false;
-};
-
-const handleWebhookIntercept = (req, res, next) => {
-  if (!isMomoWebhook(req)) {
-    return verifyWebhookSignature(req, res, (err) => {
-      if (err) return next(err);
-      return handlePaymentWebhook(req, res, next);
-    });
-  }
-  // MoMo IPN (S-20 / T-46): giữ rawBody dạng Buffer cho paymentWebhookRouter
-  req.rawBody = req.body;
-  try {
-    req.body = JSON.parse(req.body.toString('utf8'));
-  } catch {
-    // Để paymentWebhookRouter xử lý giải mã và validate payload
-  }
-  next();
-};
-
-app.use('/api/payments/webhook', rawWebhookParser, handleWebhookIntercept);
-app.use('/payments/webhook', rawWebhookParser, handleWebhookIntercept);
-
-// 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({
-  limit: '5mb',
-  verify(req, _res, buffer) {
-    // S-20's webhook route needs the exact signed bytes after this shared parser runs.
-    if (req.path.startsWith('/api/payments/') && /\/webhooks?\/?$/.test(req.path)) {
-      req.rawBody = Buffer.from(buffer);
-    }
-  },
-}));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

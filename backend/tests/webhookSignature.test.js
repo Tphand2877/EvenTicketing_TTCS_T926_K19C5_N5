@@ -1,265 +1,121 @@
 /**
  * SCRUM-212 [S-21] - Webhook có chữ ký sai bị từ chối
- * Subtasks:
  *   - [T-48] SCRUM-213: Kiểm chữ ký webhook trước khi đọc nội dung
  *   - [T-49] SCRUM-214: Ghi log lần từ chối kèm địa chỉ nguồn
+ *
+ * Chạy app thật với adapter MoMo (T-40) qua route webhook (T-46). Mọi ca ở đây bị từ chối
+ * trước khi chạm database; đường hợp lệ được kiểm trên DB thật ở webhookReplay.integration.test.js.
  */
+process.env.JWT_SECRET = 's21-auth-test-only';
+process.env.PAYMENT_PROVIDER = 'momo';
+process.env.MOMO_PARTNER_CODE = 'S21TEST';
+process.env.MOMO_ACCESS_KEY = 's21-access-key';
+process.env.MOMO_SECRET_KEY = 's21-secret-key-test-only';
+process.env.MOMO_REDIRECT_URL = 'http://localhost:8080/payment/return';
+process.env.MOMO_IPN_URL = 'http://localhost:3000/api/payments/webhook';
+delete process.env.TRUST_PROXY;
 
-process.env.PAYMENT_WEBHOOK_SECRET = 'test-webhook-secret';
-process.env.JWT_SECRET = 'test_jwt_secret_key';
+jest.mock('../src/models/AuditLog', () => ({ create: jest.fn().mockResolvedValue(1) }));
 
-jest.mock('../src/models/AuditLog', () => ({
-  create: jest.fn().mockResolvedValue(1),
-}));
-
-const request = require('supertest');
 const crypto = require('crypto');
-const app = require('../src/app');
+const request = require('supertest');
 const AuditLog = require('../src/models/AuditLog');
-const {
-  computeSignature,
-  verifySignature,
-  getClientIp,
-} = require('../src/services/paymentService');
+const { createWebhookSignatureData, sign } = require('../src/payments/adapters/MoMoGateway');
 
-const SECRET = 'test-webhook-secret';
+const ORDER_ID = '21000000-0000-4000-8000-000000000001';
+const ipn = (overrides = {}, secret = process.env.MOMO_SECRET_KEY) => {
+  const payload = {
+    partnerCode: process.env.MOMO_PARTNER_CODE, orderId: ORDER_ID, requestId: ORDER_ID, amount: 300000,
+    orderInfo: 'Ve', orderType: 'momo_wallet', transId: 2100000001, resultCode: 0, message: 'Successful.',
+    payType: 'qr', responseTime: 1792000000000, extraData: '',
+  };
+  payload.signature = sign(secret, createWebhookSignatureData(payload, process.env.MOMO_ACCESS_KEY));
+  return { ...payload, ...overrides };
+};
+const post = (app, body, headers = {}) => request(app).post('/api/payments/webhook')
+  .set('Content-Type', 'application/json').set(headers).send(typeof body === 'string' ? body : JSON.stringify(body));
+// auditAccessDenials ghi log khi response kết thúc; chờ một nhịp để lời gọi ghi chạy xong
+const logged = async (auditLog = AuditLog) => {
+  await new Promise((resolve) => setImmediate(resolve));
+  return auditLog.create.mock.calls.map(([entry]) => entry);
+};
+// Nạp một bản app riêng với biến môi trường khác (TRUST_PROXY đọc lúc nạp module)
+const loadApp = (env) => {
+  const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.entries(env).forEach(([key, value]) => { if (value === undefined) delete process.env[key]; else process.env[key] = value; });
+  let loaded;
+  jest.isolateModules(() => { loaded = { app: require('../src/app'), auditLog: require('../src/models/AuditLog') }; });
+  return { ...loaded, restore: () => Object.entries(saved).forEach(([key, value]) => {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }) };
+};
 
-function createHmacSignature(rawString, secret = SECRET) {
-  return crypto.createHmac('sha256', secret).update(Buffer.from(rawString, 'utf8')).digest('hex');
-}
+describe('SCRUM-212 [S-21]: webhook có chữ ký sai bị từ chối', () => {
+  const app = require('../src/app');
+  beforeEach(() => jest.clearAllMocks());
 
-describe('SCRUM-212 [S-21]: Webhook có chữ ký sai bị từ chối', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+  describe('T-48: kiểm chữ ký trước khi đọc nội dung', () => {
+    test('Thiếu chữ ký -> 401', async () => {
+      const { signature, ...unsigned } = ipn();
+      expect(signature).toMatch(/^[a-f0-9]{64}$/);
+      expect((await post(app, unsigned)).status).toBe(401);
+    });
 
-  describe('T-48: Kiểm chữ ký webhook trước khi đọc nội dung (SCRUM-213)', () => {
-    test('1. Từ chối ngay với 401 khi request thiếu header X-Signature', async () => {
-      const payload = JSON.stringify({
-        orderId: 'ORD-12345',
-        amount: 250000,
-        status: 'SUCCESS',
-      });
+    test('Chữ ký sai; sửa số tiền nhưng giữ chữ ký cũ -> 401', async () => {
+      expect((await post(app, ipn({ signature: 'f'.repeat(64) }))).status).toBe(401);
+      expect((await post(app, ipn({ amount: 1000 }))).status).toBe(401);
+    });
 
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .send(payload);
-
+    test('Body JSON hỏng -> 401 của webhook, không phải 400 của bộ đọc JSON chung', async () => {
+      const res = await post(app, '{"partnerCode": "S21TEST", "amount": ');
       expect(res.status).toBe(401);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Thiếu chữ ký webhook');
+      expect(JSON.stringify(res.body)).not.toMatch(/JSON không hợp lệ|vị trí ký tự/);
     });
 
-    test('2. Từ chối ngay với 401 khi chữ ký sai', async () => {
-      const payload = JSON.stringify({
-        orderId: 'ORD-12345',
-        amount: 250000,
-        status: 'SUCCESS',
-      });
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', 'bad_signature_deadbeef1234567890abcdef')
-        .send(payload);
-
-      expect(res.status).toBe(401);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Chữ ký webhook không hợp lệ');
+    test('Không có khoá mặc định: ký bằng "mock-secret" (kiểu X-Signature cũ) không qua được', async () => {
+      const body = JSON.stringify({ orderId: ORDER_ID, status: 'SUCCESS', amount: 1 });
+      const legacy = crypto.createHmac('sha256', 'mock-secret').update(body).digest('hex');
+      expect((await post(app, body, { 'X-Signature': legacy })).status).toBe(401);
+      expect((await post(app, ipn({}, 'mock-secret'))).status).toBe(401);
     });
 
-    test('3. Body hỏng/sai cú pháp JSON + chữ ký sai -> vẫn trả 401 (chứng minh kiểm tra chữ ký TRƯỚC KHI parse JSON)', async () => {
-      // Nội dung hoàn toàn không phải JSON hợp lệ
-      const malformedJson = '{ orderId: "ORD-BAD", broken_syntax: ';
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', 'invalid_signature_hex_1234567890abcdef')
-        .send(malformedJson);
-
-      // Nếu Express parse JSON trước chữ ký -> sẽ văng lỗi SyntaxError 400
-      // Vì ta kiểm tra chữ ký trước khi đọc nội dung -> kết quả PHẢI là 401
-      expect(res.status).toBe(401);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Chữ ký webhook không hợp lệ');
-    });
-
-    test('4. Chữ ký hợp lệ nhưng nội dung JSON bị hỏng -> trả 400 (chứng minh thứ tự: ký hợp lệ mới parse nội dung)', async () => {
-      const malformedJson = 'invalid non-json raw text content';
-      const validSig = createHmacSignature(malformedJson);
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', validSig)
-        .send(malformedJson);
-
-      // Chữ ký đúng nên vượt qua bước 1, sang bước 2 đọc nội dung thấy cú pháp hỏng -> 400
-      expect(res.status).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Định dạng JSON không hợp lệ');
-    });
-
-    test('5. Chấp nhận request khi chữ ký hợp lệ và payload đúng', async () => {
-      const payload = {
-        transactionId: 'TXN-9999',
-        orderId: 'ORD-77777',
-        amount: 500000,
-        status: 'SUCCESS',
-      };
-      const rawBody = JSON.stringify(payload);
-      const validSig = createHmacSignature(rawBody);
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', validSig)
-        .send(rawBody);
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.orderId).toBe('ORD-77777');
-      expect(res.body.data.status).toBe('SUCCESS');
-      expect(res.body.data.amount).toBe(500000);
-    });
-
-    test('6. Hỗ trợ chữ ký có tiền tố sha256= (chuẩn GitHub/Stripe)', async () => {
-      const payload = {
-        orderId: 'ORD-PREFIX',
-        amount: 100000,
-        status: 'FAILED',
-      };
-      const rawBody = JSON.stringify(payload);
-      const validSig = `sha256=${createHmacSignature(rawBody)}`;
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', validSig)
-        .send(rawBody);
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.status).toBe('FAILED');
+    test('Thiếu cấu hình khoá của cổng -> mọi webhook bị từ chối, không có đường lui', async () => {
+      const validIpn = ipn();
+      const isolated = loadApp({ MOMO_SECRET_KEY: undefined });
+      try {
+        expect((await post(isolated.app, validIpn)).status).toBe(401);
+      } finally {
+        isolated.restore();
+      }
     });
   });
 
-  describe('T-49: Ghi log lần từ chối kèm địa chỉ nguồn (SCRUM-214)', () => {
-    test('1. Ghi log vào audit_logs kèm địa chỉ IP nguồn khi thiếu chữ ký', async () => {
-      const payload = JSON.stringify({ orderId: 'ORD-AUDIT-1' });
+  describe('T-49: ghi log lần từ chối kèm địa chỉ nguồn', () => {
+    test('Mỗi lần từ chối ghi đúng một dòng: endpoint, 401, lý do, IP kết nối', async () => {
+      await post(app, ipn({ signature: 'a'.repeat(64) }));
+      const entries = await logged();
 
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .send(payload);
-
-      expect(res.status).toBe(401);
-
-      await new Promise((resolve) => setImmediate(resolve));
-
-      expect(AuditLog.create).toHaveBeenCalled();
-      const calls = AuditLog.create.mock.calls;
-      const matchingEntry = calls.map((c) => c[0]).find((entry) => entry.endpoint === '/api/payments/webhook');
-
-      expect(matchingEntry).toBeDefined();
-      expect(matchingEntry.status_code).toBe(401);
-      expect(matchingEntry.method).toBe('POST');
-      expect(matchingEntry.endpoint).toBe('/api/payments/webhook');
-      expect(matchingEntry.reason).toContain('Thiếu chữ ký webhook');
-      expect(matchingEntry.ip_address).toBeDefined();
-    });
-
-    test('2. Ghi log kèm địa chỉ IP nguồn từ header X-Forwarded-For khi chữ ký sai', async () => {
-      const sourceIp = '203.0.113.195';
-      const payload = JSON.stringify({ orderId: 'ORD-AUDIT-2' });
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', 'invalid_signature_mock_data')
-        .set('X-Forwarded-For', `${sourceIp}, 10.0.0.1`)
-        .send(payload);
-
-      expect(res.status).toBe(401);
-
-      await new Promise((resolve) => setImmediate(resolve));
-
-      expect(AuditLog.create).toHaveBeenCalled();
-      const calls = AuditLog.create.mock.calls;
-      const matchingEntry = calls.map((c) => c[0]).find((entry) => entry.ip_address === sourceIp);
-
-      expect(matchingEntry).toBeDefined();
-      expect(matchingEntry.ip_address).toBe(sourceIp);
-      expect(matchingEntry.status_code).toBe(401);
-      expect(matchingEntry.reason).toContain('Chữ ký webhook không hợp lệ');
-    });
-
-    test('3. Request hợp lệ (200) -> KHÔNG ghi nhận log từ chối vào audit_logs', async () => {
-      const payload = JSON.stringify({
-        orderId: 'ORD-SUCCESS',
-        amount: 300000,
-        status: 'SUCCESS',
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        method: 'POST', endpoint: '/api/payments/webhook', status_code: 401, reason: 'Chữ ký webhook không hợp lệ',
       });
-      const signature = createHmacSignature(payload);
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', signature)
-        .send(payload);
-
-      expect(res.status).toBe(200);
-
-      await new Promise((resolve) => setImmediate(resolve));
-
-      // Không có entry audit_logs nào ghi nhận việc bị từ chối
-      const calls = AuditLog.create.mock.calls;
-      const rejectionEntries = calls.filter((c) => c[0].endpoint === '/api/payments/webhook');
-      expect(rejectionEntries.length).toBe(0);
-    });
-  });
-
-  describe('Đơn vị (Unit Tests) cho PaymentService & Timing Attacks', () => {
-    test('verifySignature: chữ ký đúng trả về true', () => {
-      const raw = 'test raw body string';
-      const sig = computeSignature(raw, SECRET);
-      expect(verifySignature(raw, sig, SECRET)).toBe(true);
+      expect(entries[0].ip_address).toMatch(/127\.0\.0\.1|::1/);
     });
 
-    test('verifySignature: chữ ký sai hoặc rỗng trả về false', () => {
-      const raw = 'test raw body string';
-      expect(verifySignature(raw, 'wrong', SECRET)).toBe(false);
-      expect(verifySignature(raw, '', SECRET)).toBe(false);
-      expect(verifySignature(raw, null, SECRET)).toBe(false);
+    test('Chưa bật TRUST_PROXY: X-Forwarded-For do người gửi tự khai không được ghi làm IP nguồn', async () => {
+      await post(app, ipn({ signature: 'b'.repeat(64) }), { 'X-Forwarded-For': '6.6.6.6' });
+      const [entry] = await logged();
+      expect(entry.ip_address).not.toBe('6.6.6.6');
+      expect(entry.ip_address).toMatch(/127\.0\.0\.1|::1/);
     });
 
-    test('verifySignature: sai khóa bí mật trả về false', () => {
-      const raw = 'test raw body string';
-      const sig = computeSignature(raw, 'another-secret');
-      expect(verifySignature(raw, sig, SECRET)).toBe(false);
-    });
-
-    test('getClientIp trích xuất chính xác IP từ x-forwarded-for', () => {
-      const fakeReq = {
-        headers: { 'x-forwarded-for': '198.51.100.42, 10.0.0.1' },
-      };
-      expect(getClientIp(fakeReq)).toBe('198.51.100.42');
-    });
-
-    test('Payload thiếu orderId hoặc status trả về 400', async () => {
-      const payload = JSON.stringify({ amount: 100000 }); // thiếu orderId, status
-      const sig = createHmacSignature(payload);
-
-      const res = await request(app)
-        .post('/api/payments/webhook')
-        .set('Content-Type', 'application/json')
-        .set('X-Signature', sig)
-        .send(payload);
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('thiếu orderId hoặc status');
+    test('Sau Nginx (TRUST_PROXY=1): lấy IP client do proxy thêm vào, bỏ phần người gửi tự khai', async () => {
+      const proxied = loadApp({ TRUST_PROXY: '1' });
+      proxied.restore();
+      // Người gửi tự khai 6.6.6.6, Nginx nối thêm IP thật 203.0.113.9 vào cuối
+      await post(proxied.app, ipn({ signature: 'c'.repeat(64) }), { 'X-Forwarded-For': '6.6.6.6, 203.0.113.9' });
+      const [entry] = await logged(proxied.auditLog);
+      expect(entry.ip_address).toBe('203.0.113.9');
     });
   });
 });

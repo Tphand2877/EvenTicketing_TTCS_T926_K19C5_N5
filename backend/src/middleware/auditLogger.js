@@ -12,15 +12,6 @@ const AuditLog = require('../models/AuditLog');
 const LOG_DIR = path.join(__dirname, '../../logs');
 const LOG_FILE = path.join(LOG_DIR, 'audit.log');
 
-function extractClientIp(req) {
-  const forwarded = req.headers && req.headers['x-forwarded-for'];
-  if (forwarded) {
-    const first = forwarded.split(',')[0].trim();
-    if (first) return first;
-  }
-  return req.ip || (req.socket && req.socket.remoteAddress) || (req.connection && req.connection.remoteAddress) || 'unknown';
-}
-
 /**
  * Dựng entry log CHỈ từ các trường an toàn - không bao giờ đọc req.body ở đây.
  */
@@ -29,7 +20,7 @@ function buildLogEntry(req, statusCode, reason) {
     method: req.method,
     endpoint: (req.originalUrl || req.url || '').split('?')[0], // bỏ query string
     user_id: (req.user && (req.user.userId || req.user.id)) || null,
-    ip_address: extractClientIp(req),
+    ip_address: req.ip || (req.connection && req.connection.remoteAddress) || 'unknown',
     reason: reason || 'Không có quyền truy cập',
     status_code: statusCode,
   };
