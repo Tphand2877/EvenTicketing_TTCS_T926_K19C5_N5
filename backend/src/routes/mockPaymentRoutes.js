@@ -7,7 +7,7 @@ const securePage = (res, content) => {
 };
 
 // Adapted from S-20's server-side checkout; only T-42 may settle the order.
-const createMockPaymentRouter = ({ gateway, paymentResultService }) => {
+const createMockPaymentRouter = ({ gateway, paymentResultService, webhookService }) => {
   const router = createSecureRouter();
   router.get('/checkout', { public: true }, (req, res) => {
     let checkout;
@@ -24,7 +24,9 @@ const createMockPaymentRouter = ({ gateway, paymentResultService }) => {
     catch { return res.status(400).json({ success: false }); }
     try {
       const verified = await paymentResultService.verifyWebhook(signed);
-      await paymentResultService.applyVerifiedResult(verified);
+      // Same path as a gateway callback: S-20 receipt first, so a repeated click settles once.
+      if (webhookService) await webhookService.handle({ verifiedResult: verified, rawPayload: signed.rawBody.toString('utf8') });
+      else await paymentResultService.applyVerifiedResult(verified);
     } catch {
       console.error('[MockPayment] Processing failed.');
       return res.status(500).json({ success: false });

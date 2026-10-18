@@ -7,6 +7,8 @@ const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
 const { createPaymentRouter, paymentRouter } = require('./routes/paymentRoutes');
 const { createMockPaymentRouter } = require('./routes/mockPaymentRoutes');
+const { createPaymentWebhookRouter, paymentWebhookRouter } = require('./routes/paymentWebhookRoutes');
+const { createPaymentWebhookService } = require('./services/paymentWebhookService');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
@@ -36,8 +38,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
 app.use('/api/payments', paymentService ? createPaymentRouter({ paymentService }) : paymentRouter); // S-18 / T-41
+// T-46: receipts are deduplicated before T-42 settles, for the provider the server selected (T-44).
+const webhookService = paymentResultService
+  ? createPaymentWebhookService({ paymentResults: paymentResultService }) : undefined;
+app.use('/api/payments', paymentResultService
+  ? createPaymentWebhookRouter({ paymentResults: paymentResultService, service: webhookService })
+  : paymentWebhookRouter);
 if (paymentProvider === 'mock') {
-  app.use('/api/payments/mock', createMockPaymentRouter({ gateway: paymentGateway, paymentResultService }));
+  app.use('/api/payments/mock', createMockPaymentRouter({ gateway: paymentGateway, paymentResultService, webhookService }));
 }
 app.use('/api', protectedRoutes);
 
