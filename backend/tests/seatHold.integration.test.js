@@ -43,7 +43,7 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
       CREATE TABLE fixture_tickets (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL);
-      CREATE VIEW public_sold_seats AS
+      CREATE OR REPLACE VIEW public_sold_seats AS
         SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
     `);
     await mockDatabase('seat_categories').insert([

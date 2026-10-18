@@ -35,7 +35,7 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL, status text NOT NULL);
       CREATE INDEX tickets_showtime_seat ON fixture_tickets(showtime_id, seat_id);
       CREATE OR REPLACE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
-      CREATE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
+      CREATE OR REPLACE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
     `);
     await mockDatabase('roles').insert({ id: 1, name: 'organizer' });
     await mockDatabase('users').insert({ id: 1, email: 'query-fixture@example.test', password_hash: 'fixture', role_id: 1 });

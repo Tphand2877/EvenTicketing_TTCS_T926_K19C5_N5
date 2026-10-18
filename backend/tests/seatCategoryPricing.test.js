@@ -236,38 +236,4 @@ describe('S-15 / AC1: Đặt giá cho từng hạng ghế và đọc lại', () 
   });
 });
 
-describe('S-15 / AC3: Đơn hàng đang chờ giữ nguyên giá cũ khi đổi giá', () => {
-  test('Đơn hàng / hold đang chờ giữ nguyên snapshot giá cũ khi ban tổ chức đổi giá mới', async () => {
-    // 1. Giả sử hạng VIP đang có giá 200.000₫
-    mockCategories.get(101).price = 200000;
-
-    // 2. Một đơn hàng / hold đang chờ (pending_payment) được tạo với giá 200.000₫
-    const pendingOrder = {
-      id: 'hold-uuid-1',
-      showtime_id: 1,
-      category_id: 101,
-      order_id: 'ORDER-2026-001',
-      status: 'pending_payment',
-      price: 200000,
-    };
-    mockHolds.set(pendingOrder.id, pendingOrder);
-
-    // 3. Ban tổ chức đổi giá hạng VIP lên 350.000₫
-    const updateRes = await request(app)
-      .put('/api/showtimes/1/categories/prices')
-      .set('Authorization', OWNER)
-      .send({
-        prices: [{ id: 101, price: 350000 }],
-      });
-    expect(updateRes.status).toBe(200);
-
-    // 4. Kiểm tra: đơn hàng đang chờ VẪN giữ nguyên giá cũ 200.000₫ (không bị tăng lên 350.000₫)
-    const holdAfter = mockHolds.get('hold-uuid-1');
-    expect(holdAfter.price).toBe(200000);
-
-    // 5. Trong khi đó giá danh mục mới đã được cập nhật thành 350.000₫ cho các đơn tạo sau
-    const getRes = await request(app).get('/api/showtimes/1/categories');
-    const vip = getRes.body.data.categories.find((c) => c.id === 101);
-    expect(vip.price).toBe(350000);
-  });
-});
+// AC3 (đơn đang chờ giữ giá cũ) cần đơn thật trong DB: xem seatCategoryPricing.integration.test.js
