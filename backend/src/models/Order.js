@@ -131,105 +131,93 @@ const getOrderDetails = async (id, transaction = db) => {
   };
 };
 
+const orderError = (code, status, message) => Object.assign(new Error(message), { code, status });
+
 /**
- * T-38: Tạo đơn hàng từ lượt giữ ghế (seat_hold), tính tổng tiền từ giá hạng ghế máy chủ
+ * S-16 / T-37, T-38: Tạo đơn hàng từ lượt giữ ghế, tổng tiền tính tại máy chủ.
+ * - Lượt giữ theo mã ghế (seat_hold_seats): dùng đúng các ghế đó, phải thuộc suất của lượt giữ.
+ * - Lượt giữ theo số lượng: cấp ghế còn trống CỦA CHÍNH SUẤT ĐÓ, trong khoá dòng showtimes
+ *   (cùng thứ tự khoá với giữ chỗ và thanh toán) để hai người mua không nhận trùng ghế.
+ * - Đơn giá: giá hạng ghế khi có cột price (S-15); chưa đặt giá -> 409. Chưa có cột thì dùng giá suất.
  */
 const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
   const crypto = require('crypto');
   return db.transaction(async (trx) => {
-    // 1. Kiểm tra seat_hold
-    const hold = await trx('seat_holds')
-      .where({ id: holdId })
-      .forUpdate()
-      .first();
+    const found = await trx('seat_holds').where({ id: holdId }).first();
+    if (!found) throw orderError('HOLD_NOT_FOUND', 404, 'Không tìm thấy thông tin giữ chỗ.');
 
-    if (!hold) {
-      const err = new Error('Không tìm thấy thông tin giữ chỗ.');
-      err.code = 'HOLD_NOT_FOUND';
-      err.status = 404;
-      throw err;
-    }
-
+    const showtime = await trx('showtimes').where({ id: found.showtime_id }).forUpdate().first();
+    const hold = await trx('seat_holds').where({ id: holdId }).forUpdate().first();
+    if (!hold) throw orderError('HOLD_NOT_FOUND', 404, 'Không tìm thấy thông tin giữ chỗ.');
     if (String(hold.user_id) !== String(userId)) {
-      const err = new Error('Bạn không có quyền tạo đơn cho lượt giữ chỗ này.');
-      err.code = 'HOLD_FORBIDDEN';
-      err.status = 403;
-      throw err;
+      throw orderError('HOLD_FORBIDDEN', 403, 'Bạn không có quyền tạo đơn cho lượt giữ chỗ này.');
+    }
+    if (hold.status === 'pending_payment' && hold.order_id) {
+      throw orderError('HOLD_ALREADY_ORDERED', 409, 'Lượt giữ chỗ này đã được tạo đơn.');
+    }
+    if (hold.status !== 'active' || new Date(hold.expires_at).getTime() <= new Date(now).getTime()) {
+      throw orderError('HOLD_EXPIRED', 409, 'Lượt giữ chỗ đã hết hạn hoặc bị hủy.');
     }
 
-    const expiresAt = new Date(hold.expires_at).getTime();
-    if (hold.status !== 'active' || expiresAt <= new Date(now).getTime()) {
-      const err = new Error('Lượt giữ chỗ đã hết hạn hoặc bị hủy.');
-      err.code = 'HOLD_EXPIRED';
-      err.status = 409;
-      throw err;
-    }
-
-    // 2. Lấy danh sách seat_ids từ seat_hold_seats (nếu bảng tồn tại)
-    let heldSeats = [];
     const hasSeatHoldSeats = await trx.schema.hasTable('seat_hold_seats');
-    if (hasSeatHoldSeats) {
-      heldSeats = await trx('seat_hold_seats')
-        .where({ hold_id: holdId })
-        .orderBy('seat_id');
-    }
+    const hasCategoryPrice = await trx.schema.hasColumn('seat_categories', 'price');
+    const seatQuery = () => trx('seats')
+      .leftJoin('seat_categories', function joinCategory() {
+        this.on('seats.category_id', '=', 'seat_categories.id')
+          .andOn('seats.showtime_id', '=', 'seat_categories.showtime_id');
+      })
+      .where('seats.showtime_id', hold.showtime_id)
+      .select('seats.id', 'seat_categories.name as category_name',
+        ...(hasCategoryPrice ? ['seat_categories.price as category_price'] : []));
 
-    let seatIds = heldSeats.map((s) => s.seat_id);
+    const heldSeatIds = hasSeatHoldSeats
+      ? await trx('seat_hold_seats').where({ hold_id: holdId }).orderBy('seat_id').pluck('seat_id')
+      : [];
 
-    // 3. Truy vấn bảng seats và seat_categories để lấy đơn giá chính xác
-    let seatRows = [];
-    if (seatIds.length > 0) {
-      seatRows = await trx('seats')
-        .leftJoin('seat_categories', function () {
-          this.on('seats.category_id', '=', 'seat_categories.id')
-            .andOn('seats.showtime_id', '=', 'seat_categories.showtime_id');
-        })
-        .select(
-          'seats.id',
-          'seats.row_label',
-          'seats.seat_number',
-          'seats.category_id',
-          'seats.showtime_id',
-          'seat_categories.name as category_name',
-          'seat_categories.price as category_price'
-        )
-        .whereIn('seats.id', seatIds);
+    let seatRows;
+    if (heldSeatIds.length > 0) {
+      seatRows = await seatQuery().whereIn('seats.id', heldSeatIds);
+      if (seatRows.length !== heldSeatIds.length || heldSeatIds.length !== Number(hold.quantity)) {
+        throw orderError('HOLD_SEATS_INVALID', 409, 'Ghế trong lượt giữ không thuộc suất diễn này.');
+      }
     } else {
-      // Nếu là hold tổng (legacy), fallback tìm các ghế của showtime hoặc tạo placeholder
-      const showtime = await trx('showtimes').where({ id: hold.showtime_id }).first();
-      const showtimePrice = Number(showtime?.price || 0);
-      for (let i = 1; i <= hold.quantity; i++) {
-        seatRows.push({
-          id: i,
-          row_label: 'A',
-          seat_number: i,
-          category_name: 'Standard',
-          category_price: showtimePrice,
-        });
+      // Ghế đã thuộc một đơn chưa nhả, hoặc đang được giữ theo mã ghế, không được cấp lại.
+      seatRows = await seatQuery()
+        .whereNotExists(function allocated() {
+          this.select(1).from('order_items').whereRaw('order_items.seat_id = seats.id').whereNull('order_items.released_at');
+        })
+        .modify((query) => {
+          if (!hasSeatHoldSeats) return;
+          query.whereNotExists(function heldBySeat() {
+            this.select(1).from('seat_hold_seats as hs').join('seat_holds as h', 'h.id', 'hs.hold_id')
+              .whereRaw('hs.seat_id = seats.id')
+              .where(function activeHold() {
+                this.where('h.status', 'pending_payment')
+                  .orWhere((active) => active.where('h.status', 'active').where('h.expires_at', '>', trx.raw('clock_timestamp()')));
+              });
+          });
+        })
+        .orderBy('seats.row_label').orderBy('seats.seat_number').orderBy('seats.id')
+        .limit(Number(hold.quantity));
+      if (seatRows.length < Number(hold.quantity)) {
+        throw orderError('NOT_ENOUGH_SEATS', 409, 'Suất diễn không còn đủ ghế để tạo đơn.');
       }
     }
 
-    // T-38: Tính tổng tiền tại máy chủ từ giá hạng ghế
-    let calculatedTotal = 0;
-    const itemsToInsert = [];
+    // T-38: Tính tổng tiền tại máy chủ, bỏ qua mọi số tiền gửi từ trình duyệt
     const orderId = crypto.randomUUID();
-
-    for (const seat of seatRows) {
-      const unitPrice = Number(seat.category_price ?? 0);
-      calculatedTotal += unitPrice;
-      itemsToInsert.push({
-        order_id: orderId,
-        seat_id: seat.id,
-        category_name: seat.category_name || 'Standard',
-        unit_price: unitPrice,
-      });
+    const itemsToInsert = seatRows.map((seat) => {
+      const price = hasCategoryPrice ? seat.category_price : showtime?.price;
+      if (price === null || price === undefined) {
+        throw orderError('CATEGORY_MISSING_PRICE', 409, `Hạng ghế "${seat.category_name || ''}" chưa có giá.`);
+      }
+      return { order_id: orderId, seat_id: seat.id, category_name: seat.category_name || 'Standard', unit_price: Number(price) };
+    });
+    const calculatedTotal = itemsToInsert.reduce((sum, item) => sum + item.unit_price, 0);
+    if (!Number.isSafeInteger(calculatedTotal) || calculatedTotal <= 0) {
+      throw orderError('INVALID_ORDER_TOTAL', 409, 'Tổng tiền đơn hàng không hợp lệ.');
     }
 
-    if (calculatedTotal <= 0) {
-      calculatedTotal = Math.max(1, calculatedTotal);
-    }
-
-    // Lưu order
     await trx('orders').insert({
       id: orderId,
       user_id: userId,
@@ -238,17 +226,8 @@ const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
       currency: 'VND',
       expires_at: hold.expires_at,
     });
-
-    // Lưu order_items
-    if (itemsToInsert.length > 0) {
-      await trx('order_items').insert(itemsToInsert);
-    }
-
-    // Cập nhật seat_hold liên kết với order_id
-    await trx('seat_holds').where({ id: holdId }).update({
-      order_id: orderId,
-      status: 'pending_payment',
-    });
+    await trx('order_items').insert(itemsToInsert);
+    await trx('seat_holds').where({ id: holdId }).update({ order_id: orderId, status: 'pending_payment' });
 
     return getOrderDetails(orderId, trx);
   });

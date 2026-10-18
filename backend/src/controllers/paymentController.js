@@ -86,6 +86,17 @@ const createOrderSummaryController = ({ paymentService }) => async (req, res) =>
   }
 };
 
+const ORDER_ERROR_STATUS = {
+  HOLD_NOT_FOUND: 404,
+  HOLD_FORBIDDEN: 403,
+  HOLD_EXPIRED: 409,
+  HOLD_ALREADY_ORDERED: 409,
+  HOLD_SEATS_INVALID: 409,
+  NOT_ENOUGH_SEATS: 409,
+  CATEGORY_MISSING_PRICE: 409,
+  INVALID_ORDER_TOTAL: 409,
+};
+
 const createOrderController = ({ orders = require('../models/Order') } = {}) => async (req, res, next) => {
   try {
     const { holdId } = req.body;
@@ -104,14 +115,10 @@ const createOrderController = ({ orders = require('../models/Order') } = {}) => 
       data: { order },
     });
   } catch (error) {
-    if (error.code === 'HOLD_NOT_FOUND') {
-      return res.status(404).json({ success: false, code: error.code, message: error.message });
-    }
-    if (error.code === 'HOLD_FORBIDDEN') {
-      return res.status(403).json({ success: false, code: error.code, message: error.message });
-    }
-    if (error.code === 'HOLD_EXPIRED') {
-      return res.status(409).json({ success: false, code: error.code, message: error.message });
+    // Lỗi nghiệp vụ của createOrderFromHold: mã lỗi -> HTTP status
+    const status = ORDER_ERROR_STATUS[error.code];
+    if (status) {
+      return res.status(status).json({ success: false, code: error.code, message: error.message });
     }
     return next(error);
   }
