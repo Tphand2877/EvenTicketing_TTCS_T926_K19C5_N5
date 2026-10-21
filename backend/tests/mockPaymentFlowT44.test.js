@@ -19,6 +19,7 @@ const setup = () => {
     markPaid: jest.fn(async (_trx, input) => { state.status = 'paid'; state.transactionId = input.gatewayTransactionId; }),
     markNeedsReview: jest.fn(async () => { state.status = 'needs_review'; }),
     deletePaymentHold: jest.fn(async () => { state.hold = null; }),
+    issueTickets: jest.fn(async () => 1), // S-25: 1 ghế -> 1 vé
   };
   const service = createPaymentResultService({ repository, gateway,
     env: { DEPLOY_ENV: 'test', PAYMENT_PROVIDER: 'mock' } });
