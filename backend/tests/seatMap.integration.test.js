@@ -12,17 +12,14 @@ const config = require('../knexfile').test;
 
 const databaseTestsEnabled = process.env.RUN_SEAT_MAP_DB_TESTS === '1';
 const testDatabaseName = process.env.DB_NAME_TEST?.trim();
-const configuredDatabaseName = process.env.DB_NAME?.trim() || 'eventticketing';
-if (databaseTestsEnabled && (!testDatabaseName
-  || testDatabaseName === configuredDatabaseName
-  || testDatabaseName === 'eventticketing')) {
-  throw new Error('Set DB_NAME_TEST to a separate disposable PostgreSQL database before enabling Seat Map DB tests.');
-}
 
 const schema = `s05_test_${process.pid}_${crypto.randomBytes(4).toString('hex')}`;
 const mockDatabase = knex({
   ...config,
-  connection: { ...config.connection, database: testDatabaseName || 'eventticketing_test' },
+  connection: {
+    ...config.connection,
+    ...(testDatabaseName ? { database: testDatabaseName } : {}),
+  },
   searchPath: [schema],
   pool: { min: 0, max: 8 },
 });

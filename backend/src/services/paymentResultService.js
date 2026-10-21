@@ -1,4 +1,5 @@
 const { createPaymentGateway } = require('../payments/createPaymentGateway');
+const { readPaymentProviderConfig } = require('../config/paymentProviderConfig');
 const PaymentResultRepository = require('../repositories/paymentResultRepository');
 
 const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -15,7 +16,7 @@ class PaymentResultError extends Error {
   }
 }
 
-const getPaymentProvider = (env = process.env) => (env.PAYMENT_PROVIDER || 'momo').trim().toLowerCase();
+const getPaymentProvider = (env = process.env) => readPaymentProviderConfig(env).provider;
 
 const validateGatewayResult = (provider, result) => {
   if (!PROVIDER_PATTERN.test(provider)) {
@@ -66,9 +67,10 @@ const isExpired = (order, databaseNow) => {
 const createPaymentResultService = ({
   repository = PaymentResultRepository,
   gatewayFactory = createPaymentGateway,
+  gateway: selectedGateway,
   env = process.env,
 } = {}) => {
-  let gateway;
+  let gateway = selectedGateway;
   const resolveGateway = () => {
     if (!gateway) gateway = gatewayFactory({ env });
     return gateway;

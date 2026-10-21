@@ -93,6 +93,7 @@ describe('S-07: kết quả và lỗi', () => {
     ['INVALID_TRANSITION', 'Không thể đóng bán suất diễn đang ở trạng thái nháp.'],
     ['EVENT_NOT_PUBLISHED', 'Sự kiện chưa được công khai.'],
     ['SHOWTIME_STARTED', 'Suất diễn đã bắt đầu, không thể mở bán.'],
+    ['CATEGORY_MISSING_PRICE', 'Hạng ghế "VIP" chưa có giá. Vui lòng đặt giá cho tất cả hạng ghế trước khi mở bán.'],
   ])('%s → 409 kèm lý do', async (code, message) => {
     showtimeSaleService.changeStatus.mockRejectedValue(new showtimeSaleService.ShowtimeSaleError(code, message));
     const res = await post('/api/showtimes/1/open-sales');
