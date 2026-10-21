@@ -69,9 +69,14 @@ const SEATS_PER_ROW = 20;
 const rowLabel = (i) => String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i / 26) : '');
 
 // Sơ đồ ghế demo: 2 hàng đầu là VIP, còn lại là Thường; tổng số ghế = sức chứa
-const seedSeatMap = async (showtimeId, capacity) => {
+const seedSeatMap = async (showtimeId, capacity, basePrice = 200000) => {
+  const vipPrice = Math.round(basePrice * 1.5);
+  const standardPrice = basePrice;
   const categories = await knex('seat_categories')
-    .insert([{ showtime_id: showtimeId, name: 'VIP' }, { showtime_id: showtimeId, name: 'Thường' }])
+    .insert([
+      { showtime_id: showtimeId, name: 'VIP', price: vipPrice },
+      { showtime_id: showtimeId, name: 'Thường', price: standardPrice },
+    ])
     .returning(['id', 'name']);
   const idOf = Object.fromEntries(categories.map((c) => [c.name, c.id]));
   const seats = Array.from({ length: capacity }, (_, i) => {
@@ -111,7 +116,7 @@ const seedSeatMap = async (showtimeId, capacity) => {
           price: s.price,
           capacity: s.capacity,
         }).returning('id');
-        await seedSeatMap(showtime.id, s.capacity);
+        await seedSeatMap(showtime.id, s.capacity, s.price);
         await knex('showtimes').where({ id: showtime.id }).update({ status: 'on_sale' });
       }
       created += 1;

@@ -30,7 +30,9 @@ export default function LoginPage() {
     try {
       const data = await loginApi(email, password, remember)
       login(data)
-      navigate(returnTo, { replace: true })
+      // S-30: nhân viên soát vé vào thẳng màn quét khi không có trang cần quay lại
+      const staffHome = !returnParam && ['staff', 'supervisor'].includes(data?.user?.role)
+      navigate(staffHome ? '/scanner' : returnTo, { replace: true })
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Đăng nhập thất bại'
       // Map common backend error messages to Vietnamese

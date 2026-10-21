@@ -21,7 +21,7 @@ const describeError = (err, fallback) => {
  * S-07 / T-16 - Organizer quản lý suất diễn của một sự kiện:
  * nạp sơ đồ ghế từ tệp JSON (S-05), mở bán / đóng bán (S-07).
  */
-export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onUploadSeatMap }) {
+export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onUploadSeatMap, onSetPricing }) {
   const [showtimes, setShowtimes] = useState([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -87,6 +87,7 @@ export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onU
         const status = STATUS_STYLES[s.status] || STATUS_STYLES.draft
         const busy = busyId === s.id
         const message = messages[s.id]
+        const hasUnpriced = s.seat_count > 0 && s.unpriced_category_count > 0
         return (
           <li key={s.id} className="py-3 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -95,12 +96,27 @@ export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onU
                   <span className="text-sm font-medium text-gray-900">{formatDateTime(s.starts_at)}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${status.className}`}>{status.label}</span>
                 </div>
-                <p className="text-xs text-gray-500">
-                  {formatPrice(s.price)} ·{' '}
-                  {s.seat_count > 0
-                    ? `${s.seat_count} ghế · ${s.category_count} hạng`
-                    : 'Chưa có sơ đồ ghế'}
-                </p>
+                <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5">
+                  {hasUnpriced ? (
+                    <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-medium">
+                      ⚠️ Còn {s.unpriced_category_count} hạng chưa có giá
+                    </span>
+                  ) : s.seat_count > 0 && s.min_price != null && s.max_price != null ? (
+                    <span className="font-semibold text-gray-800">
+                      {s.min_price === s.max_price
+                        ? formatPrice(s.min_price)
+                        : `${formatPrice(s.min_price)} – ${formatPrice(s.max_price)}`}
+                    </span>
+                  ) : (
+                    <span>{formatPrice(s.price)}</span>
+                  )}
+                  <span>·</span>
+                  <span>
+                    {s.seat_count > 0
+                      ? `${s.seat_count} ghế · ${s.category_count} hạng`
+                      : 'Chưa có sơ đồ ghế'}
+                  </span>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 text-sm">
@@ -132,6 +148,22 @@ export default function ShowtimeSalesPanel({ eventId, refreshKey, onChanged, onU
                   </svg>
                   {s.seat_count > 0 ? 'Sơ đồ ghế (Xem / Đổi)' : 'Nạp sơ đồ ghế'}
                 </button>
+
+                {/* S-15 / T-35: Nút mở modal đặt giá vé cho từng hạng ghế */}
+                {s.seat_count > 0 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onSetPricing?.(s)}
+                    className="px-3 py-1.5 rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-50 font-medium flex items-center gap-1.5"
+                    title="Đặt giá vé riêng cho từng hạng ghế (S-15)"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                    Đặt giá vé
+                  </button>
+                )}
                 {s.status === 'on_sale' ? (
                   <button
                     type="button"

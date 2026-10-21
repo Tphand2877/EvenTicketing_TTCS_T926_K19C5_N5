@@ -20,15 +20,26 @@ describe('S-26: QR trên vé có chữ ký, không làm giả được ngoài h�
     expect(verifyTicketCode(`ET1.${other}.${signature}`, ENV)).toEqual({ valid: false, reason: 'BAD_SIGNATURE' });
   });
 
+  test('cách viết khác của cùng chữ ký (đổi 2 bit đệm của ký tự cuối) -> BAD_SIGNATURE, mỗi vé chỉ có 1 chuỗi QR', () => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const code = signTicketCode(TICKET, ENV);
+    const variant = code.slice(0, -1) + alphabet[alphabet.indexOf(code.at(-1)) ^ 1];
+    expect(Buffer.from(variant.split('.')[2], 'base64url')).toEqual(Buffer.from(code.split('.')[2], 'base64url'));
+    expect(verifyTicketCode(variant, ENV)).toEqual({ valid: false, reason: 'BAD_SIGNATURE' });
+  });
+
   test('chữ ký tạo bằng khoá khác (ngoài hệ thống) -> BAD_SIGNATURE', () => {
     const forged = signTicketCode(TICKET, { TICKET_QR_SECRET: 'attacker-guessed-secret-of-32-chars!!' });
     expect(verifyTicketCode(forged, ENV)).toEqual({ valid: false, reason: 'BAD_SIGNATURE' });
   });
 
-  test('sửa 1 ký tự chữ ký -> BAD_SIGNATURE', () => {
+  test('sửa bất kỳ 1 ký tự nào của chữ ký (kể cả ký tự cuối chỉ chứa bit đệm) -> BAD_SIGNATURE', () => {
     const code = signTicketCode(TICKET, ENV);
-    const last = code.at(-1) === 'A' ? 'B' : 'A';
-    expect(verifyTicketCode(code.slice(0, -1) + last, ENV).valid).toBe(false);
+    const start = code.lastIndexOf('.') + 1;
+    for (let i = start; i < code.length; i += 1) {
+      const swapped = code[i] === 'A' ? 'B' : 'A';
+      expect(verifyTicketCode(code.slice(0, i) + swapped + code.slice(i + 1), ENV)).toEqual({ valid: false, reason: 'BAD_SIGNATURE' });
+    }
   });
 
   test.each([

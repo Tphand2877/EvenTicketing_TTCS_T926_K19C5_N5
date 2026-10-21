@@ -14,11 +14,6 @@ router.get('/dashboard', { authenticated: true }, (req, res) => {
   });
 });
 
-// ✅ Chỉ admin
-router.get('/admin/users', { roles: ['admin'] }, (req, res) => {
-  res.json({ success: true, message: 'Danh sách người dùng (admin only)' });
-});
-
 // ✅ Admin hoặc organizer
 router.get('/organizer/events', { roles: ['admin', 'organizer'] }, (req, res) => {
   res.json({ success: true, message: 'Quản lý sự kiện (admin + organizer)' });
