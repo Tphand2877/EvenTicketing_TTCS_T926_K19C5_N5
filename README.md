@@ -681,3 +681,55 @@ Lưu ý:
 - Dữ liệu sai bị từ chối.
 - Admin không tự khoá được chính mình.
 - Lọc và tìm kiếm.
+
+---
+
+## 🚪 16. S-29 / S-30: Soát vé tại cổng (nối S-31)
+
+**S-29: chọn suất và cổng trước khi quét**
+- Organizer khai báo cổng cho sự kiện trên trang `/organizer` (dòng "Cổng soát vé", nút **Sửa**, mỗi dòng một cổng).
+- Sự kiện chưa khai báo cổng thì có một cổng mặc định "Cổng chính".
+- Nhân viên mở `/scanner`, chọn suất (không hiện suất nháp; mỗi suất có số "Đã vào x/y vé"), chọn cổng, rồi bấm **Bắt đầu soát vé**.
+- Lựa chọn được nhớ trên máy. Server từ chối mọi lần quét không có suất/cổng, cổng không thuộc sự kiện, hoặc suất nháp.
+
+**S-30: quét QR.** Có ba cách đưa mã vào:
+- Camera sau của điện thoại (cần HTTPS hoặc localhost).
+- Ô nhập mã, dùng được với máy quét cầm tay.
+- Chọn ảnh có mã QR.
+
+Server xử lý mỗi lần quét theo thứ tự:
+1. Kiểm chữ ký QR (S-26).
+2. Khoá vé và đơn bằng `FOR SHARE`.
+3. Kiểm vai trò và trạng thái nhân viên ngay trong DB (S-28), nên tài khoản vừa bị khoá mất quyền ngay dù JWT còn hạn.
+4. Kiểm vé thuộc đúng suất.
+5. Ghi lượt vào vào sổ S-31, cùng một transaction.
+
+Kết quả hiển thị:
+
+| Mã | Ý nghĩa |
+| --- | --- |
+| `CHECKED_IN` | Vé hợp lệ, mời vào (xanh). Hiện ghế, hạng, sự kiện, suất |
+| `ALREADY_CHECKED_IN` | Vé đã dùng (đỏ). Hiện cổng, giờ và nhân viên của lần vào đầu |
+| `WRONG_SHOWTIME` | Vé của suất khác. Hiện suất đúng của vé |
+| `INVALID_QR` / `TICKET_VOID` / `TICKET_NOT_FOUND` | QR giả hoặc bị sửa / vé đã huỷ / không có vé |
+| `ADMITTED_WITH_NOTE` | Trưởng ca (`supervisor`) hoặc admin cho vào thêm, có lý do (S-31) |
+
+| API | Quyền |
+| --- | --- |
+| `GET /api/scanner/showtimes` | staff, supervisor, admin |
+| `POST /api/scanner/scan` `{ qrCode, showtimeId, gate }` | staff, supervisor, admin |
+| `POST /api/scanner/admit-with-note` `{ qrCode, showtimeId, gate, reason, requestId }` | supervisor, admin |
+| `GET/PUT /api/events/:id/gates` `{ gates: [...] }` | Organizer chủ sự kiện, admin |
+
+Đăng nhập bằng tài khoản staff hoặc supervisor thì vào thẳng `/scanner`.
+
+**Kiểm thử.** `tests/gateScanner.integration.test.js` (`RUN_GATE_SCAN_DB_TESTS=1`), 10 ca trên PostgreSQL với vé thật, QR ký thật và sổ S-31 thật:
+- Khai báo cổng.
+- Bắt buộc chọn suất và cổng.
+- Vé hợp lệ được cho vào.
+- QR giả, bị sửa hoặc ký bằng khoá khác bị từ chối.
+- Vé sai suất và vé đã huỷ bị từ chối.
+- Quét lại ở cổng khác thấy lần vào đầu.
+- 20 máy quét cùng lúc chỉ có 1 lượt vào.
+- Chỉ trưởng ca cho vào có ghi chú; gửi lại không cho vào thêm.
+- Nhân viên đã bị khoá bị chặn ngay.

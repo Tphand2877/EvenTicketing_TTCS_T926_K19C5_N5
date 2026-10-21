@@ -15,6 +15,7 @@ import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import MyTicketsPage from './pages/MyTicketsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import ScannerPage from './pages/ScannerPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -60,6 +61,11 @@ export default function App() {
           <Route element={<PrivateRoute roles={['organizer', 'admin']} />}>
             {/* SCRUM-80: quản lý sự kiện & suất diễn */}
             <Route path="/organizer" element={<OrganizerDashboardPage />} />
+          </Route>
+
+          {/* ── S-29 / S-30: soát vé (vai trò được kiểm lại ở server mỗi lần quét) ── */}
+          <Route element={<PrivateRoute roles={['staff', 'supervisor', 'admin']} />}>
+            <Route path="/scanner" element={<ScannerPage />} />
           </Route>
 
           {/* ── Admin-only routes ─────────────────────────────── */}

@@ -4,6 +4,7 @@ import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import { CATEGORIES, formatDateTime, formatPrice, getErrorMessage } from '../components/event/eventFormat'
 import ShowtimeSalesPanel from '../components/event/ShowtimeSalesPanel'
+import EventGatesEditor from '../components/event/EventGatesEditor'
 import {
   createEvent,
   createShowtime,
@@ -179,6 +180,7 @@ export default function OrganizerDashboardPage() {
                     <p className="text-sm text-gray-500">
                       {event.showtime_count} suất diễn · Từ {formatPrice(event.min_price)} · Gần nhất: {formatDateTime(event.next_starts_at)}
                     </p>
+                    <EventGatesEditor eventId={event.id} />
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm">
                     {event.status === 'published' && (
