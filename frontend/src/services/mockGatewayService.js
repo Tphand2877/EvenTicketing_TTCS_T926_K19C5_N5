@@ -50,6 +50,7 @@ export const sendMockPaymentResult = async ({ orderId, amount, status, transacti
       'Content-Type': 'application/json',
       [SIGNATURE_HEADER]: signature,
     },
+    skipAuthRedirect: true,
   })
   return data
 }
