@@ -126,18 +126,18 @@ describeDatabase('S-16: tạo đơn từ ghế đang giữ', () => {
     expect(await database('orders')).toHaveLength(1);
   });
 
-  test('Khi có giá theo hạng (S-15): dùng giá hạng; hạng chưa có giá -> 409', async () => {
-    await database.schema.alterTable('seat_categories', (table) => table.integer('price').nullable());
+  test('Giá theo hạng (S-15): hạng có giá dùng giá hạng; hạng chưa đặt giá dùng giá gốc của suất', async () => {
     try {
       const unpriced = await createOrder(1, await hold(1, 1, 1));
-      expect([unpriced.status, unpriced.body.code]).toEqual([409, 'CATEGORY_MISSING_PRICE']);
+      expect(unpriced.status).toBe(201);
+      expect((await itemsOf(orderIdOf(unpriced))).map((i) => i.price)).toEqual([100000]);
 
       await database('seat_categories').where({ id: 1 }).update({ price: 250000 });
       const priced = await createOrder(2, await hold(2, 1, 2));
       expect(priced.status).toBe(201);
       expect((await itemsOf(orderIdOf(priced))).map((i) => i.price)).toEqual([250000, 250000]);
     } finally {
-      await database.schema.alterTable('seat_categories', (table) => table.dropColumn('price'));
+      await database('seat_categories').update({ price: null });
     }
   });
 

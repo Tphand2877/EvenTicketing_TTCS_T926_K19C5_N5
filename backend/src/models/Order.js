@@ -138,7 +138,7 @@ const orderError = (code, status, message) => Object.assign(new Error(message), 
  * - Lượt giữ theo mã ghế (seat_hold_seats): dùng đúng các ghế đó, phải thuộc suất của lượt giữ.
  * - Lượt giữ theo số lượng: cấp ghế còn trống CỦA CHÍNH SUẤT ĐÓ, trong khoá dòng showtimes
  *   (cùng thứ tự khoá với giữ chỗ và thanh toán) để hai người mua không nhận trùng ghế.
- * - Đơn giá: giá hạng ghế khi có cột price (S-15); chưa đặt giá -> 409. Chưa có cột thì dùng giá suất.
+ * - Đơn giá: giá hạng ghế (S-15); hạng chưa đặt giá thì dùng giá gốc của suất (giống trang sơ đồ ghế hiển thị).
  */
 const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
   const crypto = require('crypto');
@@ -207,7 +207,7 @@ const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
     // T-38: Tính tổng tiền tại máy chủ, bỏ qua mọi số tiền gửi từ trình duyệt
     const orderId = crypto.randomUUID();
     const itemsToInsert = seatRows.map((seat) => {
-      const price = hasCategoryPrice ? seat.category_price : showtime?.price;
+      const price = (hasCategoryPrice ? seat.category_price : null) ?? showtime?.price;
       if (price === null || price === undefined) {
         throw orderError('CATEGORY_MISSING_PRICE', 409, `Hạng ghế "${seat.category_name || ''}" chưa có giá.`);
       }
