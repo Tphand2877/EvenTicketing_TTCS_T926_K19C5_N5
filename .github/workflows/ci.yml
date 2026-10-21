@@ -5,13 +5,20 @@ on:
     branches:
       - main
       - develop
-      - staging
       - 'feature/**'
+      - 'bugfix/**'
+      - 'fix/**'
+      - 'release/**'
+      - 'hotfix/**'
+      - 'chore/**'
+      - 'ci/**'
+      - 'docs/**'
+      - 'test/**'
+      - 'refactor/**'
   pull_request:
     branches:
       - main
       - develop
-      - staging
   workflow_dispatch:
 
 jobs:
@@ -221,7 +228,10 @@ jobs:
   # DEPLOY STAGING
   # =========================
   deploy-staging:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    concurrency:
+      group: eventticketing-staging
+      cancel-in-progress: false
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
 
     needs:
       - backend-build

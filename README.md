@@ -33,6 +33,14 @@
 
 ---
 
+## Quy trình nhánh của nhóm
+
+Phát triển và tích hợp tại `develop`: `feature/*` → PR → `develop`.
+Phát hành: `develop` → `release/*` → PR → `main`, gắn tag rồi đồng bộ về `develop`.
+Hotfix bắt đầu từ `main`, sau đó merge vào `main` và đồng bộ về `develop`.
+CI kiểm tra PR; push vào `develop` sau khi kiểm tra đạt sẽ triển khai staging.
+Xem [hướng dẫn Git Flow và các bước chuyển đổi](docs/GITFLOW.md).
+
 ## 🛠️ 2. Công nghệ sử dụng (Tech Stack)
 
 | Phân hệ | Công nghệ | Chi tiết |
