@@ -1,8 +1,8 @@
 name: Gitflow
 
-# Validate trusted base-branch rules without executing pull-request code.
+# Validate branch metadata only: no checkout, secrets or write permissions.
 on:
-  pull_request_target:
+  pull_request:
     branches: [main, develop]
     types: [opened, synchronize, reopened, edited, ready_for_review]
 

@@ -59,10 +59,10 @@ Sau khi bản chuyển đổi và workflow đã được review/merge:
    Không đặt `deploy-staging` làm check bắt buộc trên PR vì nó chỉ chạy sau merge vào `develop`.
 4. Xác nhận runner staging online, secrets đầy đủ, deploy thành công và AC pass trước khi báo Done.
 
-`gitflow.yml` dùng `pull_request_target`, chỉ đọc metadata và chạy script inline từ nhánh đích.
-Nó không checkout/chạy code của PR và chỉ có quyền đọc contents. Khi chính workflow chưa có trên
-nhánh đích, PR bootstrap chưa được nó kiểm tra; cần review thủ công. Sau khi merge, bật check bắt buộc
-để ngăn bỏ qua chính sách. Workflow không thay thế branch protection hoặc review của đồng đội.
+`gitflow.yml` dùng `pull_request`, chỉ đọc metadata và chạy script inline. Nó không checkout
+hoặc chạy mã ứng dụng của PR, không dùng secret và chỉ có quyền đọc contents. CI kiểm tra chính
+commit merge của PR. Thay đổi workflow phải được review như code; bật các check bắt buộc để không
+bỏ qua chính sách. Workflow không thay thế branch protection hoặc review của đồng đội.
 
 ## Đợt chuyển đổi hiện tại
 
