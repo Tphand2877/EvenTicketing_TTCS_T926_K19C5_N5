@@ -1,31 +1,38 @@
 import { useMemo, useState } from 'react'
 import { SEATS_PER_ROW, rowLabel } from './seatUtils'
+import { formatPrice } from '../event/eventFormat'
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.2
 const ZOOM_STEP = 0.15
 
 /**
- * SCRUM-165 (T-20): Sơ đồ ghế trên trình duyệt kèm màu và ký hiệu trạng thái:
+ * SCRUM-165 (T-20) & S-10 / S-15:
+ * Sơ đồ ghế trên trình duyệt kèm màu và ký hiệu trạng thái:
  * - Trống: màu xanh lá/trắng, ký hiệu '○'
  * - Đang có người giữ: màu vàng hổ phách, ký hiệu '⏳'
  * - Đã bán: màu xám, ký hiệu '✕'
- * - Đang chọn: màu hồng tím, ký hiệu '✓'
+ * - Bạn đang giữ / Đang chọn: màu hồng tím, ký hiệu '✓'
  *
  * AC5: Hỗ trợ phóng to thu nhỏ trên điện thoại/màn hình nhỏ và bấm trúng ghế chính xác.
  * AC4: Tối ưu hóa hiển thị 2000 ghế dưới 2 giây.
+ * S-15: Hiện chi tiết hạng ghế và giá vé khi trỏ chuột / hover.
+ * S-10: Hỗ trợ onSeatToggle và selectedSeatIds cho API giữ chỗ từng ghế.
  */
 export default function SeatMapCanvas({
   seats: rawSeats,
   capacity,
   takenCount = 0,
   selected = [],
+  selectedSeatIds = [],
   maxSelect = 10,
   onChange,
+  onSeatToggle,
   disabled = false,
   onRefresh,
 }) {
   const [zoom, setZoom] = useState(1.0)
+  const [hoveredSeat, setHoveredSeat] = useState(null)
 
   // Chuẩn hóa danh sách ghế: hỗ trợ cả mảng seats từ API T-19 hoặc fallback capacity
   const normalizedSeats = useMemo(() => {
@@ -74,28 +81,38 @@ export default function SeatMapCanvas({
     }))
   }, [normalizedSeats])
 
-  // Tập hợp các ID hoặc seat object đang được chọn
+  // Tập hợp các ID hoặc seat object đang được chọn / đang giữ
   const selectedIds = useMemo(() => {
     const set = new Set()
     for (const item of selected) {
       if (typeof item === 'object' && item !== null) {
-        set.add(item.id)
+        set.add(Number(item.id))
       } else {
-        set.add(item)
+        set.add(Number(item))
       }
     }
+    for (const id of selectedSeatIds) {
+      set.add(Number(id))
+    }
     return set
-  }, [selected])
+  }, [selected, selectedSeatIds])
 
   const toggleSeat = (seat) => {
-    if (disabled || seat.status !== 'available') return
+    if (disabled) return
 
-    const isSelected = selectedIds.has(seat.id)
+    if (onSeatToggle) {
+      onSeatToggle(seat)
+      return
+    }
+
+    const isSelected = selectedIds.has(Number(seat.id))
+    if (!isSelected && seat.status !== 'available') return
+
     let newSelected
 
     if (isSelected) {
       // Bỏ chọn
-      newSelected = selected.filter((item) => (typeof item === 'object' ? item.id !== seat.id : item !== seat.id))
+      newSelected = selected.filter((item) => (typeof item === 'object' ? Number(item.id) !== Number(seat.id) : Number(item) !== Number(seat.id)))
     } else {
       if (selected.length >= maxSelect) return
       // Chọn thêm
@@ -112,7 +129,7 @@ export default function SeatMapCanvas({
   const handleResetZoom = () => setZoom(1.0)
 
   if (normalizedSeats.length === 0) {
-    return null
+    return <p className="text-sm text-gray-500">Suất diễn chưa có sơ đồ ghế.</p>
   }
 
   return (
@@ -174,6 +191,34 @@ export default function SeatMapCanvas({
         </div>
       </div>
 
+      {/* S-15 / AC1: Thanh thông tin chi tiết khi trỏ chuột vào ghế */}
+      {hoveredSeat ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-pink-200 rounded-xl text-xs shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-900">
+              Ghế {hoveredSeat.row}{hoveredSeat.number}
+            </span>
+            {hoveredSeat.category && (
+              <span className="bg-white border border-gray-200 px-2 py-0.5 rounded text-[11px] font-semibold text-gray-700">
+                Hạng {hoveredSeat.category}
+              </span>
+            )}
+            <span className="text-gray-500 text-[11px]">
+              &bull; {hoveredSeat.status === 'sold' ? 'Đã bán' : hoveredSeat.status === 'held' ? 'Đang có người giữ' : 'Còn trống'}
+            </span>
+          </div>
+          <div className="font-bold text-pink-600 text-sm">
+            {hoveredSeat.price !== undefined && hoveredSeat.price !== null
+              ? formatPrice(hoveredSeat.price)
+              : 'Chưa có giá'}
+          </div>
+        </div>
+      ) : null}
+
       {/* Sân khấu */}
       <div className="text-center text-[10px] font-semibold tracking-widest text-gray-400 uppercase select-none">
         <div className="mx-auto mb-1.5 h-2 w-2/3 max-w-md rounded-full bg-gradient-to-r from-violet-500 via-pink-500 to-amber-400 shadow-sm" />
@@ -197,7 +242,7 @@ export default function SeatMapCanvas({
 
               <div className="flex items-center gap-1.5">
                 {seats.map((seat) => {
-                  const isSelected = selectedIds.has(seat.id)
+                  const isSelected = selectedIds.has(Number(seat.id))
                   const isHeld = seat.status === 'held'
                   const isSold = seat.status === 'sold'
                   const isAvailable = seat.status === 'available'
@@ -216,14 +261,21 @@ export default function SeatMapCanvas({
                     symbol = '⏳'
                     stateClass = 'bg-amber-100 border-amber-300 text-amber-800 cursor-not-allowed opacity-90'
                   } else if (isSelected) {
-                    statusText = 'Đang chọn'
+                    statusText = 'Bạn đang giữ'
                     symbol = '✓'
                     stateClass = 'bg-pink-600 border-pink-600 text-white font-bold ring-2 ring-pink-300 shadow-sm'
-                  } else if (full || disabled) {
+                  } else if ((full || disabled) && !onSeatToggle) {
                     stateClass = 'bg-white border-gray-200 text-gray-300 cursor-not-allowed'
                   }
 
-                  const isButtonDisabled = disabled || !isAvailable || (full && !isSelected)
+                  const canClick = onSeatToggle ? (isAvailable || isSelected) : (isAvailable && (!full || isSelected))
+                  const isButtonDisabled = disabled || !canClick
+
+                  // S-15 / AC1: Hiện đúng giá khi trỏ vào ghế
+                  const priceText = seat.price !== undefined && seat.price !== null
+                    ? ` - ${formatPrice(seat.price)}`
+                    : ''
+                  const seatTitle = `Ghế ${seat.row}${seat.number} (${statusText})${seat.category ? ` - ${seat.category}` : ''}${priceText}`
 
                   return (
                     <button
@@ -231,11 +283,14 @@ export default function SeatMapCanvas({
                       type="button"
                       disabled={isButtonDisabled}
                       onClick={() => toggleSeat(seat)}
-                      title={`Ghế ${seat.row}${seat.number} (${statusText})${seat.category ? ` - ${seat.category}` : ''}`}
-                      aria-label={`Ghế ${seat.row}${seat.number} - ${statusText}`}
+                      onMouseEnter={() => setHoveredSeat(seat)}
+                      onMouseLeave={() => setHoveredSeat((curr) => (curr?.id === seat.id ? null : curr))}
+                      title={seatTitle}
+                      aria-label={`Ghế ${seat.row}${seat.number} - ${statusText}${priceText}`}
                       aria-pressed={isSelected}
                       data-seat-id={seat.id}
                       data-seat-status={seat.status}
+                      data-seat-price={seat.price}
                       className={`relative min-w-[28px] h-7 px-1 rounded flex items-center justify-center gap-0.5 text-[10px] font-medium border transition-colors select-none ${stateClass}`}
                     >
                       <span className="text-[10px] leading-none shrink-0 font-bold" aria-hidden="true">

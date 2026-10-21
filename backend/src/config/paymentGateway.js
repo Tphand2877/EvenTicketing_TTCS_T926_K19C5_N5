@@ -23,7 +23,11 @@ const parseUrl = (value, name, { allowHttp = false, originOnly = false } = {}) =
 };
 
 const readMomoConfig = (env = process.env) => {
-  const isProduction = env.NODE_ENV === 'production';
+  // Staging uses NODE_ENV=production for Node optimizations but remains a
+  // distinct deployment. Both public deployments require HTTPS callbacks.
+  const requiresHttps = env.DEPLOY_ENV
+    ? ['staging', 'production'].includes(env.DEPLOY_ENV)
+    : env.NODE_ENV === 'production';
   const apiBaseValue = env.MOMO_API_BASE_URL?.trim() || DEFAULT_MOMO_API_BASE_URL;
   const apiBase = parseUrl(apiBaseValue, 'MOMO_API_BASE_URL', { originOnly: true });
   if (!ALLOWED_MOMO_API_HOSTS.has(apiBase.hostname)) {
@@ -32,8 +36,8 @@ const readMomoConfig = (env = process.env) => {
   const apiBaseUrl = apiBase.origin;
   const redirectUrl = requireValue(env, 'MOMO_REDIRECT_URL');
   const ipnUrl = requireValue(env, 'MOMO_IPN_URL');
-  parseUrl(redirectUrl, 'MOMO_REDIRECT_URL', { allowHttp: !isProduction });
-  parseUrl(ipnUrl, 'MOMO_IPN_URL', { allowHttp: !isProduction });
+  parseUrl(redirectUrl, 'MOMO_REDIRECT_URL', { allowHttp: !requiresHttps });
+  parseUrl(ipnUrl, 'MOMO_IPN_URL', { allowHttp: !requiresHttps });
 
   return {
     partnerCode: requireValue(env, 'MOMO_PARTNER_CODE'),

@@ -1,5 +1,6 @@
 const Order = require('../models/Order');
 const { createPaymentGateway } = require('../payments/createPaymentGateway');
+const { readPaymentProviderConfig } = require('../config/paymentProviderConfig');
 
 const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PAYMENT_CLAIM_STALE_MS = 2 * 60 * 1000;
@@ -14,13 +15,17 @@ class PaymentServiceError extends Error {
   }
 }
 
-const getPaymentProvider = (env = process.env) => (env.PAYMENT_PROVIDER || 'momo').trim().toLowerCase();
+const getPaymentProvider = (env = process.env) => readPaymentProviderConfig(env).provider;
 
-const isSafeRedirectUrl = (value) => {
+const isSafeRedirectUrl = (value, env = process.env) => {
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password;
+    const { deployment } = readPaymentProviderConfig(env);
+    const localHttp = url.protocol === 'http:'
+      && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+      && ['development', 'test'].includes(deployment);
+    return (url.protocol === 'https:' || localHttp) && !url.username && !url.password;
   } catch {
     return false;
   }
@@ -29,10 +34,11 @@ const isSafeRedirectUrl = (value) => {
 const createPaymentService = ({
   orders = Order,
   gatewayFactory = createPaymentGateway,
+  gateway: selectedGateway,
   env = process.env,
   now = () => new Date(),
 } = {}) => {
-  let gateway;
+  let gateway = selectedGateway;
   const resolveGateway = () => {
     if (!gateway) gateway = gatewayFactory({ env });
     return gateway;
@@ -106,7 +112,7 @@ const createPaymentService = ({
 
   const resolveClaimState = async (order) => {
     if (order.payment_url) {
-      if (isSafeRedirectUrl(order.payment_url)) {
+      if (isSafeRedirectUrl(order.payment_url, env)) {
         return {
           status: 'ready',
           orderId: order.id,
@@ -163,7 +169,7 @@ const createPaymentService = ({
   };
 
   const validateGatewayResponse = (payment, order) => (
-    payment && payment.gatewayRequestId === order.id && isSafeRedirectUrl(payment.redirectUrl)
+    payment && payment.gatewayRequestId === order.id && isSafeRedirectUrl(payment.redirectUrl, env)
   );
 
   return {

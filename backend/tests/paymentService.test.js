@@ -300,6 +300,35 @@ describe('T-41 payment request service', () => {
     expect(gateway.createPayment).not.toHaveBeenCalled();
   });
 
+  test('switching from MoMo to Mock cannot create a second transaction for a claimed order', async () => {
+    const { orders, gateway } = createFixture({ gateway_provider: 'momo', gateway_request_id: ORDER_ID });
+    const mockService = createPaymentService({ orders, gateway, env: {
+      DEPLOY_ENV: 'staging', PAYMENT_PROVIDER: 'mock',
+    }, now: () => NOW });
+    await expect(mockService.createPayment({ orderId: ORDER_ID, userId: 7 }))
+      .rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_MISMATCH' });
+    expect(orders.claimPaymentRequest).not.toHaveBeenCalled();
+    expect(gateway.createPayment).not.toHaveBeenCalled();
+  });
+
+  test('Mock localhost HTTP redirect is limited to development, while staging requires HTTPS', async () => {
+    const local = createFixture();
+    local.gateway.createPayment.mockResolvedValueOnce({ gatewayRequestId: ORDER_ID,
+      redirectUrl: 'http://localhost:3000/api/payments/mock/checkout?token=signed' });
+    const development = createPaymentService({ orders: local.orders, gateway: local.gateway,
+      env: { DEPLOY_ENV: 'development', PAYMENT_PROVIDER: 'mock' }, now: () => NOW });
+    await expect(development.createPayment({ orderId: ORDER_ID, userId: 7 }))
+      .resolves.toMatchObject({ status: 'ready', redirectUrl: expect.stringContaining('localhost') });
+
+    const staging = createFixture();
+    staging.gateway.createPayment.mockResolvedValueOnce({ gatewayRequestId: ORDER_ID,
+      redirectUrl: 'http://localhost:3000/api/payments/mock/checkout?token=signed' });
+    const stagingService = createPaymentService({ orders: staging.orders, gateway: staging.gateway,
+      env: { DEPLOY_ENV: 'staging', PAYMENT_PROVIDER: 'mock' }, now: () => NOW });
+    await expect(stagingService.createPayment({ orderId: ORDER_ID, userId: 7 }))
+      .rejects.toMatchObject({ code: 'PAYMENT_GATEWAY_RESPONSE_INVALID' });
+  });
+
   test('rejects a provider response with a changed request ID and retains its claim', async () => {
     const { orders } = createFixture();
     const invalidGateway = {

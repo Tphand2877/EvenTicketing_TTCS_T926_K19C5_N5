@@ -12,7 +12,8 @@
     "migrate:rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
     "test": "jest --coverage",
-    "test:integration": "node scripts/test-seat-holds.js"
+    "test:integration": "node scripts/test-seat-holds.js",
+    "verify:payment-ac": "node scripts/verify-payment-ac.js"
   },
   "jest": {
     "testEnvironment": "node",

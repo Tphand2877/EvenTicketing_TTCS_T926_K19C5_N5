@@ -33,6 +33,12 @@
 
 ---
 
+## Quy trình nhánh của nhóm
+
+Nhóm dùng GitHub Flow: tạo `feature/*` từ `main` mới nhất, mở PR vào `main`,
+chờ CI đạt và một đồng đội duyệt rồi merge. Các nhánh sửa lỗi và tài liệu cũng mở PR vào `main`.
+Xem [hướng dẫn làm việc với main và nhánh tính năng](docs/GITHUB_FLOW.md).
+
 ## 🛠️ 2. Công nghệ sử dụng (Tech Stack)
 
 | Phân hệ | Công nghệ | Chi tiết |
@@ -295,11 +301,15 @@ npm run build
 - `GET /api/events/:id` - Lấy chi tiết thông tin sự kiện và các suất diễn liên quan.
 - `POST /api/events` - Tạo sự kiện mới (Yêu cầu quyền `organizer` hoặc `admin`).
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
+- `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
+- `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
 - `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+- `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
 - `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
 - `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
-- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
+- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 11).
 - `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
 
 ### Hệ thống
@@ -388,6 +398,28 @@ chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. K�
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
 ## S-18 / T-40: MoMo payment gateway adapter
+
+### T-44 provider selection (integration branch)
+
+Set `DEPLOY_ENV=development|test|staging|production` on the backend. `NODE_ENV`
+controls Node behavior and does not select the deployment: staging may use
+`NODE_ENV=production`. `PAYMENT_PROVIDER` is the only gateway selector. Leave it
+unset for the staging Mock default, set `momo` for MoMo, or set `mock` in a
+non-production deployment. The legacy `PAYMENT_GATEWAY` setting is rejected.
+
+Mock requires a backend-only `MOCK_PAYMENT_WEBHOOK_SECRET` of at least 32 bytes
+and `MOCK_PAYMENT_PUBLIC_ORIGIN`. Use an HTTPS origin on staging; HTTP is accepted
+only for localhost in development/test. The server generates signed checkout
+tokens and processes the result through T-42. Never put the signing key in a
+`VITE_*` variable or let the browser sign payment results. Restart the backend
+after changing provider. Production requires an explicit `PAYMENT_PROVIDER=momo`
+and refuses Mock before opening the HTTP listener.
+
+Do not switch providers while orders claimed by the old provider are unsettled:
+new payment requests for such orders are rejected, and callbacks from the old
+provider need its original verifier. Drain and reconcile those orders before a
+rolling switch. S-20's webhook idempotency branch and T-43's frontend Mock page
+still require contract reconciliation before this integration branch can merge.
 
 Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
 `captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
@@ -544,7 +576,49 @@ giữa lúc 20 người đang giữ chỗ.
 
 ---
 
-## 👥 12. Đội ngũ phát triển
+## 12. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
+
+T-22 thêm migration `007_create_seat_hold_seats.js`. `seat_holds` là lượt giữ
+chung của một người dùng cho một suất diễn; `seat_hold_seats` liên kết từng mã
+ghế với lượt đó. Thời hạn UTC nằm trên lượt giữ, vì vậy mọi ghế được thêm sau
+đều nhận cùng `expires_at`. Index expiry hiện có của bảng `seat_holds` phục vụ
+job dọn dữ liệu. View `public_seat_holds` chỉ công bố suất diễn, mã ghế, trạng
+thái và thời điểm hết hạn cho truy vấn T-19.
+
+T-23 dùng API mới, giữ nguyên API số lượng cũ của S-12:
+
+```http
+POST /api/showtimes/:id/seat-holds
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"seatIds":[101,102]}
+```
+
+Thành công trả `{data:{hold:{id,showtimeId,seatIds,quantity,expiresAt,serverNow}}}`.
+Mọi ghế trong một request được giữ hoặc bị từ chối cùng nhau. Gửi thêm ghế cho
+cùng lượt giữ sẽ giữ nguyên `expiresAt`; ghế đã bị giữ/bán hoặc suất không còn
+mở bán trả HTTP 409. `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId`
+bỏ một ghế; bỏ ghế cuối cùng sẽ hủy lượt giữ. `SEAT_HOLD_TTL_SECONDS` cấu hình
+thời lượng, mặc định 600 giây.
+
+T-24 tải sơ đồ từ `GET /api/showtimes/:id/seats` của T-19, đo độ lệch giờ qua
+`GET /api/showtimes/:id/server-time`, rồi tính từng nhịp từ `expiresAt` của máy
+chủ. Khi đồng hồ về 0, giao diện tải lại sơ đồ để bỏ trạng thái giữ đã hết hạn.
+
+Các API giữ ghế kiểm tra inventory `seats`, trạng thái bán `showtimes.status`
+và view `public_sold_seats`; thiếu schema/view thì trả 503 để không báo ghế trống
+sai. T-11 cung cấp bảng ghế, T-15 cung cấp trạng thái mở bán và nguồn vé phải
+cung cấp `public_sold_seats` trước khi chạy nghiệm thu tích hợp. Không tạo view
+vé rỗng làm giả trạng thái ghế.
+
+Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chung khi
+thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
+ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
+
+---
+
+## 👥 13. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -575,10 +649,48 @@ adapters must be connected before these new endpoints are available on staging.
 * **Sub-tasks:**
   - **T-17**: Truy vấn suất diễn đang mở bán có phân trang cursor (`GET /api/showtimes`), chỉ trả về các suất `on_sale` trong tương lai của sự kiện đã publish, sắp xếp theo thời gian diễn (`starts_at ASC, id ASC`), tính toán khoảng giá (`min_price`, `max_price`), có bộ đệm Redis 30 giây đạt tiêu chuẩn NFR (p95 < 500ms khi có 200 suất diễn).
   - **T-18**: Trang danh sách sự kiện (`EventListPage`) và trang chi tiết suất diễn (`ShowtimeDetailPage` / `/showtimes/:id`):
-    - **AC1:** Người dùng chưa đăng nhập vẫn xem được danh sách sự kiện kèm suất gần nhất được sắp xếp theo ngày diễn.
-    - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
-    - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
-    - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+## 🏷️ Đặt giá vé cho từng hạng ghế của suất diễn (SCRUM-27 / S-15)
+
+* **User Story:** Là ban tổ chức tôi muốn đặt giá riêng cho từng hạng ghế của một suất để ghế gần sân khấu bán đắt hơn ghế xa.
+* **Sub-tasks:**
+  - **T-34**: Cột giá trên `seat_categories` kèm migration (`009_add_price_to_seat_categories.js`):
+    - Thêm cột `price` kiểu số nguyên (`INTEGER NULL CHECK (price >= 0)`) vào bảng `seat_categories` và `seat_holds`.
+    - API lấy danh sách hạng ghế: `GET /api/showtimes/:id/categories` (xác thực organizer sở hữu hoặc admin).
+    - API cập nhật giá: `PUT /api/showtimes/:id/categories/prices` (hoặc alias `PUT /api/showtimes/:id/pricing`), kiểm tra ràng buộc số nguyên đơn vị đồng, không âm, không dùng số thực (AC4, NFR).
+    - Suất diễn `showtimes` tổng hợp thêm `min_price`, `max_price`, `unpriced_category_count` khi liệt kê cho organizer.
+    - **AC2:** Bổ sung kiểm tra khi mở bán (`POST /api/showtimes/:id/open-sales`): nếu còn hạng ghế chưa có giá thì chặn với mã HTTP 409 `CATEGORY_MISSING_PRICE` và thông báo rõ tên hạng còn thiếu.
+    - **AC3:** Giá vé tại thời điểm giữ chỗ/đặt hàng được lưu cố định (`seat_holds.price`), khi đổi giá hạng ghế thì đơn/lượt giữ đang chờ giữ nguyên giá cũ, chỉ đơn tạo sau mới dùng giá mới.
+  - **T-35**: Màn hình đặt giá và hiện giá trên sơ đồ ghế:
+    - **Màn hình đặt giá (`ShowtimePricingModal`):** Truy cập tại Organizer Dashboard (`/organizer`) qua nút *"Đặt giá vé"*. Hỗ trợ nhập giá cho từng hạng ghế, tính năng gợi ý giá phân tầng nhanh, kiểm tra lỗi tức thì ngay tại ô input (in-field validation) khi nhập số âm hoặc số thực/chữ (AC4).
+    - **Hiện giá trên sơ đồ ghế (`SeatMapCanvas` & `EventDetail`):**
+      - Khi trỏ chuột / hover vào từng ghế, thanh thông tin hiển thị rõ tên ghế, hạng ghế và giá vé tương ứng (AC1).
+      - Thuộc tính `title` và `aria-label` của nút ghế chứa thông tin giá vé đã định dạng (VND).
+      - Hiển thị bảng giá tóm tắt từng hạng ghế (`categoryPricesSummary`) ngay trên sơ đồ ghế.
+      - Tạm tính đơn hàng tính chính xác theo tổng giá của từng ghế đã chọn (`totalCalculated`).
+
+---
+
+## 🔐 13. S-21: Webhook có chữ ký sai bị từ chối (SCRUM-212 / T-48, T-49)
+
+> **Story:** `[S-21]` Webhook có chữ ký sai bị từ chối  
+> **Epic:** `[E-05]` Payments & Orders  
+> **Phân loại:** MoSCoW-Must | Sprint-3 | Tier-Ready  
+
+### 📌 Chi tiết các Sub-tasks
+
+* **[T-48] Kiểm chữ ký webhook trước khi đọc nội dung (SCRUM-213):**
+  - `POST /api/payments/webhook` nhận **bytes thô** qua `express.raw` mount trước `express.json()`; không middleware nào parse JSON của webhook.
+  - Adapter của cổng đang dùng (MoMo, hoặc cổng giả lập khi có T-44) kiểm chữ ký trên đúng các bytes đó (`paymentResultService.verifyWebhook`, T-42). Sai hoặc thiếu chữ ký → `401`, trước khi ghi biên nhận (T-45/T-46) hay đụng tới đơn hàng.
+  - Không có khoá mặc định: khoá lấy từ cấu hình cổng (`MOMO_SECRET_KEY`); thiếu cấu hình thì mọi webhook bị từ chối.
+* **[T-49] Ghi log lần từ chối kèm địa chỉ nguồn (SCRUM-214):**
+  - Mỗi lần từ chối ghi **đúng một** dòng `audit_logs` (và `logs/audit.log`) qua `auditAccessDenials`: method, endpoint, `401`, lý do `Chữ ký webhook không hợp lệ`, IP nguồn.
+  - IP nguồn là `req.ip`. Chỉ khi đặt `TRUST_PROXY` (docker-compose đặt `1` vì backend chạy sau Nginx) Express mới đọc `X-Forwarded-For`; chạy trực tiếp thì người gửi không tự khai IP được.
+
+### 🧪 Kiểm thử tự động
+- `backend/tests/webhookSignature.test.js`: chạy app thật với adapter MoMo, IPN ký bằng khoá thử. Gồm: thiếu chữ ký, chữ ký sai, sửa số tiền, body JSON hỏng (vẫn 401, chứng minh không qua bộ đọc JSON chung), không có khoá thì không giả mạo được bằng `mock-secret`, đúng một dòng log kèm IP, không tin `X-Forwarded-For` khi chưa bật `TRUST_PROXY` và tin đúng 1 lớp khi bật.
+- Đường xử lý webhook hợp lệ (biên nhận, chống trùng, cập nhật đơn) do `webhookReplay.integration.test.js` (T-47) kiểm trên DB thật.
+
+---
 
 ## 🛒 Xem lại chi tiết đơn trước khi thanh toán (SCRUM-192 / S-17)
 

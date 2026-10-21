@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
       - staging
       - 'feature/**'
   pull_request:
     branches:
       - main
-      - develop
       - staging
   workflow_dispatch:
 
@@ -87,9 +85,12 @@ jobs:
       RUN_SEAT_HOLD_DB_TESTS: '1'
       RUN_SEAT_MAP_DB_TESTS: '1'
       RUN_SHOWTIME_SALE_DB_TESTS: '1'
+      RUN_PAYMENT_CLAIM_DB_TESTS: '1'
+      RUN_PAYMENT_RESULT_DB_TESTS: '1'
       RUN_PAYMENT_EVENT_DB_TESTS: '1'
       RUN_ORDER_EXPIRY_DB_TESTS: '1'
       RUN_ORDER_CREATION_DB_TESTS: '1'
+      RUN_SEAT_PRICING_DB_TESTS: '1'
 
     services:
       redis:
