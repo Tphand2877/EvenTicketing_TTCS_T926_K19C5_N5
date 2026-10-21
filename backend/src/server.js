@@ -3,9 +3,10 @@ const app = require('./app');
 const db = require('./config/database');
 const { startSeatHoldCleanupJob } = require('./jobs/seatHoldCleanupJob');
 const { startOrderExpiryCleanupJob } = require('./jobs/orderExpiryCleanupJob');
+const { startTicketEmailJob } = require('./jobs/ticketEmailJob');
 
 const startServer = async ({ port = process.env.PORT || 3000, app: application = app } = {}) => {
-  const jobs = [startSeatHoldCleanupJob(), startOrderExpiryCleanupJob()];
+  const jobs = [startSeatHoldCleanupJob(), startOrderExpiryCleanupJob(), startTicketEmailJob()];
   await Promise.all(jobs.map((job) => job.ready));
   const server = application.listen(port, () => console.log(`Server is running on port ${port}`));
   let closing;

@@ -13,3 +13,9 @@ export const getOrderTickets = async (orderId) => {
   const { data } = await apiClient.get(`/tickets/orders/${encodeURIComponent(orderId)}`)
   return data.data.tickets
 }
+
+/** S-27: gửi (lại) vé của một đơn đã thanh toán về email của tài khoản */
+export const sendTicketEmail = async (orderId) => {
+  const { data } = await apiClient.post(`/tickets/orders/${encodeURIComponent(orderId)}/email`)
+  return data.message
+}

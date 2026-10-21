@@ -91,6 +91,12 @@ const liveSeats = (orderId) => database('order_items').where({ order_id: orderId
 const payThenPassDeadline = async () => {
   const res = await request(app).post('/api/payments/webhook').set('Content-Type', 'application/json').send(momoIpn(PAID, 5300000001));
   expect(res.status).toBe(200);
+  // S-27: chờ lượt gửi email vé (chạy sau khi webhook trả 200) xong rồi mới chụp ảnh đơn
+  for (let i = 0; i < 200; i += 1) {
+    const row = await database('orders').where({ id: PAID }).first();
+    if (row.ticket_email_attempts > 0 && !row.ticket_email_claimed_at) break;
+    await wait(50);
+  }
   await database('orders').where({ id: PAID }).update({ expires_at: database.raw("clock_timestamp() - interval '1 hour'") });
   const paid = await snapshot(PAID);
   expect(paid.order).toMatchObject({ status: 'paid', gateway_transaction_id: '5300000001' });

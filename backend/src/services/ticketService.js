@@ -16,9 +16,10 @@ class TicketServiceError extends Error {
 
 /** Ảnh QR (data URL PNG) cho nội dung đã ký. Dùng chung cho trang vé (S-25) và email (S-27). */
 const renderQrDataUrl = (code) => QRCode.toDataURL(code, { errorCorrectionLevel: 'M', margin: 2, width: 240 });
+const renderQrPng = (code) => QRCode.toBuffer(code, { errorCorrectionLevel: 'M', margin: 2, width: 240 });
 
 const createTicketService = ({ model = createTicketModel(), env = process.env } = {}) => {
-  const present = async (ticket) => {
+  const present = async (ticket, { withImage = true } = {}) => {
     const qrCode = signTicketCode(ticket.id, env);
     return {
       id: ticket.id,
@@ -33,15 +34,21 @@ const createTicketService = ({ model = createTicketModel(), env = process.env } 
       showtime: { id: ticket.showtimeId, startsAt: ticket.startsAt },
       event: { id: ticket.eventId, title: ticket.eventTitle, venue: ticket.venue },
       qrCode,
-      qrImage: await renderQrDataUrl(qrCode),
+      ...(withImage && { qrImage: await renderQrDataUrl(qrCode) }),
     };
   };
   // Chỉ vé của đơn đã thanh toán được hiển thị
-  const presentAll = (tickets) => Promise.all(tickets.filter((t) => t.orderStatus === 'paid').map(present));
+  const presentAll = (tickets, options) => Promise.all(tickets.filter((t) => t.orderStatus === 'paid').map((t) => present(t, options)));
 
   return {
     async listMyTickets({ userId }) {
       return presentAll(await model.findByUser(userId));
+    },
+
+    /** S-27: vé của đơn đã thanh toán kèm ảnh QR PNG để đính kèm email. Phía gọi tự kiểm quyền. */
+    async ticketsForEmail(orderId) {
+      const tickets = await presentAll(await model.findByOrder(orderId), { withImage: false });
+      return Promise.all(tickets.map(async (t) => ({ ...t, qrPng: await renderQrPng(t.qrCode) })));
     },
 
     async getOrderTickets({ orderId, userId }) {
@@ -55,4 +62,4 @@ const createTicketService = ({ model = createTicketModel(), env = process.env } 
   };
 };
 
-module.exports = { TicketServiceError, createTicketService, renderQrDataUrl };
+module.exports = { TicketServiceError, createTicketService, renderQrDataUrl, renderQrPng };

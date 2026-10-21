@@ -90,6 +90,7 @@ jobs:
       RUN_PAYMENT_EVENT_DB_TESTS: '1'
       RUN_ORDER_EXPIRY_DB_TESTS: '1'
       RUN_TICKET_DB_TESTS: '1'
+      RUN_TICKET_EMAIL_DB_TESTS: '1'
 
     services:
       redis:

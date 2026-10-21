@@ -52,6 +52,13 @@ services:
       MOMO_IPN_URL: ${MOMO_IPN_URL:-}
       # S-26: khoá ký QR trên vé (>= 32 ký tự). Để trống thì dẫn xuất từ JWT_SECRET.
       TICKET_QR_SECRET: ${TICKET_QR_SECRET:-}
+      # S-27: SMTP gửi email vé. Không đặt SMTP_HOST thì chỉ ghi log.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-EvenTicketing <no-reply@eventticketing.local>}
 
     ports:
       - "3000:3000"

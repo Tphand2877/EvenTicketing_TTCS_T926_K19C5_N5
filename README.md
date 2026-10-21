@@ -619,28 +619,6 @@ Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
 
 ---
 
-## 🎟️ 14. SCRUM-223 [S-27] & SCRUM-35 [E-11]: Vé gửi qua email kèm mã QR (Cao Long)
-
-> **Story:** `[S-27]` Vé gửi qua email kèm mã QR (SCRUM-223)  
-> **Epic:** `[E-11]` Public Event Pages, Sales Controls & Notifications / Trang công khai, mở bán và thông báo (SCRUM-35)  
-> **Người thực hiện:** Cao Long (CL) | Sprint 4 | Story Points: 2  
-
-### 📌 Chi tiết tính năng
-- **Gửi email tự động sau thanh toán:** Khi đơn hàng chuyển trạng thái `paid`, hệ thống tự động sinh vé kèm mã QR có chữ ký số và gửi email xác nhận vé đến email của người mua (`emailService.sendTicketEmail`).
-- **Mã QR có chữ ký số bảo mật (S-26/S-27):** Mỗi vé có mã canonical `TKT-<8 ký tự order>-<seatId>` và chữ ký **HMAC-SHA256** bảo mật dựa trên bí mật hệ thống. Ngăn chặn tuyệt đối việc làm giả mã QR hoặc sửa đổi số ghế/suất diễn ngoài hệ thống.
-- **Nội dung email đầy đủ:** Tên sự kiện, địa điểm, thời gian biểu diễn, mã đơn hàng, tổng tiền, danh sách từng ghế, hạng vé và hình ảnh mã QR (Data URL PNG/SVG) có thể quét trực tiếp tại cửa kiểm soát.
-- **API truy vấn & gửi lại vé:**
-  - `GET /api/orders/:orderId/tickets` - Tra cứu danh sách vé kèm mã QR (yêu cầu đăng nhập, chỉ chủ đơn hàng hoặc Admin).
-  - `POST /api/orders/:orderId/send-ticket-email` - Gửi lại email vé điện tử cho người mua khi cần.
-- **Giao diện kết quả thanh toán (`/payment-result` & `/payment/return`):** Hiển thị trực quan trạng thái thanh toán, banner thông báo vé đã gửi qua email, danh sách vé và mã QR trên màn hình kèm nút bấm *"Gửi lại email vé"* tiện lợi.
-
-### 🧪 Kiểm thử tự động
-- `backend/tests/ticketEmailS27.test.js`: Kiểm thử toàn diện 13 test cases bao gồm tạo và xác thực chữ ký HMAC-SHA256, từ chối chữ ký giả/sai lệch, sinh mã QR, định dạng email HTML, phân quyền và xác thực API.
-
----
-
----
-
 ## 🎫 14. S-25 / S-26: Vé điện tử có mã QR được ký
 
 **Phát vé (S-25).** Khi webhook thanh toán chuyển đơn sang `paid` (T-42), mỗi ghế chưa nhả của đơn được phát một vé trong bảng `tickets`, **trong cùng transaction** với trạng thái `paid`:
@@ -664,3 +642,38 @@ Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
 **Kiểm thử.**
 - `tests/ticketQr.test.js`: 13 ca giả mạo/sai định dạng.
 - `tests/ticketIssuance.integration.test.js` (`RUN_TICKET_DB_TESTS=1`): chạy webhook MoMo ký thật trên PostgreSQL, rồi kiểm phát vé, idempotent, quyền xem và rollback khi không phát đủ vé.
+
+---
+
+## 📧 17. S-27 (SCRUM-223): Vé gửi qua email kèm mã QR (Cao Long)
+
+**Khi nào gửi.** Email chỉ được gửi **sau khi** thanh toán đã commit, tức là đơn đã `paid` và đã có vé (S-25):
+- Webhook trả 200 cho cổng thanh toán xong mới gửi, nên không bắt cổng phải chờ SMTP.
+- Mỗi đơn được nhận việc bằng một câu `UPDATE … FOR UPDATE SKIP LOCKED` trên `orders.ticket_email_*`. Vì vậy webhook gửi lại, job chạy song song hay nhiều server cùng lúc cũng chỉ gửi **một** email.
+- SMTP lỗi thì thanh toán vẫn thành công. Job `ticketEmailJob` (mỗi `TICKET_EMAIL_INTERVAL_MS`, mặc định 60 giây) thử lại, tối đa 5 lần.
+- Đơn đã `paid` trước khi nâng cấp không bị gửi email hàng loạt.
+
+**Nội dung email**
+- Sự kiện, địa điểm, giờ diễn theo giờ Việt Nam, tổng tiền.
+- Mỗi vé: ghế, hạng, giá, mã vé và **ảnh QR riêng**. QR là mã ký S-26 (`ET1.<mã vé>.<chữ ký>`), cùng loại máy soát vé S-30 quét được.
+- Ảnh QR là PNG đính kèm inline (`cid:`), vì Gmail và Outlook chặn ảnh `data:` URL.
+- Tên sự kiện và tên người mua được escape HTML.
+
+**Cấu hình gửi thật**
+- Đặt `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, `MAIL_FROM`. Với Gmail dùng `smtp.gmail.com:465`, `SMTP_SECURE=true` và App Password.
+- Không có `SMTP_HOST` thì chỉ ghi log (dev/test). Email kích hoạt tài khoản (S-03) cũng dùng chung SMTP này.
+
+**Gửi lại.** `POST /api/tickets/orders/:orderId/email`:
+- Chỉ chủ đơn gọi được, và đơn phải đã thanh toán.
+- Mỗi lần cách nhau ít nhất 60 giây (gọi sớm hơn trả `429`).
+- Trang `/my-tickets?orderId=…` có nút **Gửi lại vé qua email**.
+
+**Kiểm thử.** `tests/ticketEmail.integration.test.js` (`RUN_TICKET_EMAIL_DB_TESTS=1`), dùng webhook MoMo ký thật trên PostgreSQL, kiểm:
+- 1 email, 3 ảnh QR giải ra đúng mã vé.
+- HTML đã escape.
+- Webhook gửi 5 lần cộng job song song vẫn chỉ 1 email.
+- Thanh toán thất bại thì không có email.
+- SMTP lỗi thì job gửi lại; dừng sau 5 lần.
+- Quyền và giới hạn 60 giây của nút gửi lại.
+
+Chi tiết: [docs/S-27-ticket-email.md](docs/S-27-ticket-email.md).

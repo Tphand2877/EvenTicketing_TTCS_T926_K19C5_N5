@@ -198,22 +198,11 @@ const createPaymentResultService = ({
         throw new PaymentResultError('PAYMENT_RESULT_UNVERIFIED',
           'Only a result verified by the gateway adapter can change an order.');
       }
-      const outcome = await repository.withLockedOrder({
+      return repository.withLockedOrder({
         orderId: verifiedResult.orderId,
         transaction,
         operation: (context) => applyToLockedOrder(context, verifiedResult),
       });
-      if (outcome && outcome.status === 'paid' && !outcome.duplicate && process.env.NODE_ENV !== 'test') {
-        setImmediate(() => {
-          try {
-            const { sendTicketEmailForOrder } = require('./ticketNotificationService');
-            sendTicketEmailForOrder(verifiedResult.orderId).catch(() => {});
-          } catch {
-            // Ignore in tests
-          }
-        });
-      }
-      return outcome;
     },
   };
 };

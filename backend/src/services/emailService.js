@@ -1,24 +1,81 @@
 /**
  * SCRUM-76 [S-03] & SCRUM-223 [S-27] - Email Service
  * - Gửi email xác thực tài khoản và liên kết kích hoạt (S-03)
- * - Gửi vé điện tử qua email kèm mã QR có chữ ký sau thanh toán (S-27 / E-11)
+ * - Gửi vé điện tử qua email kèm mã QR có chữ ký sau thanh toán (S-27)
+ *
+ * Có SMTP_HOST thì gửi thật qua SMTP (nodemailer). Không có thì chỉ ghi nhận + log (môi trường dev/test).
  */
+const nodemailer = require('nodemailer');
 
 const sentEmails = [];
 const sentTicketEmails = [];
+let transport;
+
+const getTransport = (env = process.env) => {
+  if (!env.SMTP_HOST) return null;
+  if (!transport) {
+    transport = nodemailer.createTransport({
+      host: env.SMTP_HOST,
+      port: Number(env.SMTP_PORT) || 587,
+      secure: env.SMTP_SECURE === 'true',
+      auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD } : undefined,
+    });
+  }
+  return transport;
+};
+
+const deliver = async (message) => {
+  const smtp = getTransport();
+  if (!smtp) return { transport: 'log' };
+  await smtp.sendMail({ from: process.env.MAIL_FROM || 'EvenTicketing <no-reply@eventticketing.local>', ...message });
+  return { transport: 'smtp' };
+};
+
+// Tên sự kiện/người mua do người dùng nhập: luôn escape trước khi chèn vào HTML
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 const formatVND = (value) => `${Number(value || 0).toLocaleString('vi-VN')}₫`;
+const formatDateTimeVi = (value) => (value
+  ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'full', timeStyle: 'short', timeZone: process.env.APP_TIMEZONE || 'Asia/Ho_Chi_Minh' })
+    .format(new Date(value))
+  : '');
 
-const formatDateTimeVi = (dateInput) => {
-  if (!dateInput) return '';
-  const d = new Date(dateInput);
-  if (Number.isNaN(d.getTime())) return '';
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${hours}:${minutes} ngày ${day}/${month}/${year}`;
+/** HTML email vé. Ảnh QR là ảnh đính kèm inline (cid:), vì Gmail/Outlook chặn ảnh data: URL. */
+const renderTicketEmail = ({ buyerName, order, tickets }) => {
+  const first = tickets[0];
+  const shortOrderId = order.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+  const rows = tickets.map((t, i) => `
+    <tr><td style="padding:16px;border:1px solid #E5E7EB;border-radius:12px;">
+      <div style="font-weight:700;color:#4F46E5;font-size:16px;">Vé ${i + 1}: Ghế ${escapeHtml(t.seat.label)}</div>
+      <div style="font-size:13px;color:#6B7280;margin:4px 0 8px;">Hạng ${escapeHtml(t.category)} · ${formatVND(t.price)} · Mã vé ${escapeHtml(t.code)}</div>
+      <img src="cid:${t.cid}" alt="Mã QR vé ${escapeHtml(t.code)}" width="200" height="200" style="display:block;" />
+    </td></tr>`).join('');
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;">
+      <h1 style="font-size:22px;margin:0 0 12px;">🎟️ EvenTicketing</h1>
+      <p>Xin chào <strong>${escapeHtml(buyerName || 'Quý khách')}</strong>,</p>
+      <p>Đơn hàng <strong>#${shortOrderId}</strong> đã được thanh toán. Dưới đây là vé điện tử của bạn, mỗi vé một mã QR.</p>
+      <div style="background:#EEF2FF;border-left:4px solid #4F46E5;padding:12px 16px;margin:16px 0;">
+        <div style="font-size:16px;font-weight:700;">${escapeHtml(first.event.title)}</div>
+        <div style="font-size:13px;">📍 ${escapeHtml(first.event.venue)}</div>
+        <div style="font-size:13px;">🕒 ${escapeHtml(formatDateTimeVi(first.showtime.startsAt))}</div>
+        <div style="font-size:13px;">💳 Tổng tiền: ${formatVND(order.total_amount)}</div>
+      </div>
+      <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:separate;border-spacing:0 12px;">${rows}</table>
+      <p style="font-size:12px;color:#92400E;background:#FEF3C7;padding:12px;border-radius:8px;">
+        Mỗi mã QR chỉ dùng được cho một lượt vào. Mã QR có chữ ký của hệ thống, không chia sẻ cho người khác.
+        Bạn cũng xem được vé trong mục "Vé của tôi" trên website.
+      </p>
+    </div>`;
+  const text = [
+    `Xin chào ${buyerName || 'Quý khách'},`,
+    `Đơn hàng #${shortOrderId} đã được thanh toán.`,
+    `${first.event.title} - ${first.event.venue} - ${formatDateTimeVi(first.showtime.startsAt)}`,
+    ...tickets.map((t, i) => `Vé ${i + 1}: ghế ${t.seat.label}, hạng ${t.category}, mã vé ${t.code}`),
+    'Mã QR của từng vé nằm trong email (bản HTML) và trong mục "Vé của tôi".',
+  ].join('\n');
+  return { html, text, subject: `[EvenTicketing] Vé điện tử: ${first.event.title} (Đơn #${shortOrderId})` };
 };
 
 const emailService = {
@@ -51,113 +108,45 @@ const emailService = {
       console.log(`[EmailService] 📧 Đã gửi email kích hoạt tới ${email}`);
       console.log(`[EmailService] 🔗 Liên kết kích hoạt: ${verificationUrl}`);
     }
+    try {
+      await deliver({ to: email, subject: mailRecord.subject,
+        text: `Xin chào ${fullName || ''}, mở liên kết sau để kích hoạt tài khoản: ${verificationUrl}` });
+    } catch {
+      // Đăng ký không thất bại vì SMTP; người dùng có thể yêu cầu gửi lại liên kết
+      console.error('[EmailService] Activation email delivery failed.');
+    }
 
     return mailRecord;
   },
 
   /**
-   * Gửi vé điện tử qua email kèm mã QR (SCRUM-223 / S-27)
-   * @param {Object} params
-   * @param {string} params.to - Địa chỉ email người nhận
-   * @param {string} [params.buyerName] - Tên người mua
-   * @param {Object} params.order - Thông tin đơn hàng (id, totalAmount, currency)
-   * @param {Object} params.event - Thông tin sự kiện (title, venue)
-   * @param {Object} params.showtime - Thông tin suất diễn (startsAt)
-   * @param {Array} params.tickets - Danh sách vé có QR code data URL
+   * S-27: gửi vé điện tử kèm QR. tickets là vé đã phát (S-25), mỗi vé có qrCode đã ký (S-26)
+   * và qrPng (Buffer). Lỗi SMTP được ném ra để bộ gửi thử lại sau.
    */
-  sendTicketEmail: async ({ to, buyerName = '', order, event, showtime, tickets = [] }) => {
-    const shortOrderId = (order.id || '').replace(/-/g, '').slice(0, 8).toUpperCase();
-    const eventTitle = event?.title || 'Sự kiện EvenTicketing';
-    const eventVenue = event?.venue || 'Chưa xác định';
-    const showtimeStr = formatDateTimeVi(showtime?.startsAt || showtime?.starts_at);
-    const totalAmount = order?.totalAmount || order?.total_amount || 0;
-
-    const ticketsHtml = tickets
-      .map((t, idx) => `
-        <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px; margin-bottom: 16px; background-color: #F9FAFB;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #D1D5DB; padding-bottom: 12px; margin-bottom: 12px;">
-            <div>
-              <span style="font-weight: 700; color: #4F46E5; font-size: 16px;">Vé #${idx + 1}: Ghế ${t.seatLabel || `${t.rowLabel}${t.seatNumber}`}</span>
-              <div style="font-size: 13px; color: #6B7280; margin-top: 2px;">Hạng vé: <strong>${t.categoryName || 'Tiêu chuẩn'}</strong> | Mã vé: <code>${t.ticketId}</code></div>
-            </div>
-            <div style="font-size: 15px; font-weight: 700; color: #111827;">${formatVND(t.unitPrice)}</div>
-          </div>
-          <div style="text-align: center; padding: 8px 0;">
-            ${t.qrCodeDataUrl ? `<img src="${t.qrCodeDataUrl}" alt="Mã QR vé ${t.ticketId}" style="width: 160px; height: 160px; border-radius: 8px; border: 1px solid #E5E7EB; display: inline-block;" />` : ''}
-            <div style="font-size: 11px; color: #6B7280; margin-top: 6px; font-family: monospace;">Mã quét bảo mật: ${t.ticketId}</div>
-          </div>
-        </div>
-      `)
-      .join('');
-
-    const html = `
-      <div style="font-family: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #111827; background: #FFFFFF; border-radius: 16px; overflow: hidden; border: 1px solid #E5E7EB;">
-        <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 32px 24px; text-align: center; color: #FFFFFF;">
-          <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">🎟️ EvenTicketing</h1>
-          <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Vé điện tử xác nhận đơn hàng thành công</p>
-        </div>
-
-        <div style="padding: 24px;">
-          <p style="font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">
-            Xin chào <strong>${buyerName || 'Quý khách'}</strong>,<br/>
-            Cảm ơn bạn đã đặt vé qua EvenTicketing! Đơn hàng <strong>#${shortOrderId}</strong> của bạn đã được thanh toán thành công. Dưới đây là thông tin vé điện tử kèm mã QR để bạn sử dụng khi đến tham dự sự kiện.
-          </p>
-
-          <div style="background-color: #EEF2FF; border-left: 4px solid #4F46E5; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
-            <div style="font-size: 16px; font-weight: 700; color: #3730A3;">${eventTitle}</div>
-            <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">📍 Địa điểm: <strong>${eventVenue}</strong></div>
-            <div style="font-size: 13px; color: #4B5563; margin-top: 2px;">🕒 Thời gian: <strong>${showtimeStr}</strong></div>
-            <div style="font-size: 13px; color: #4B5563; margin-top: 2px;">💳 Tổng tiền: <strong style="color: #059669;">${formatVND(totalAmount)}</strong> (Đã thanh toán)</div>
-          </div>
-
-          <h3 style="font-size: 15px; font-weight: 700; margin: 0 0 12px 0; color: #1F2937;">Danh sách vé và Mã QR kiểm soát</h3>
-          ${ticketsHtml}
-
-          <div style="background-color: #FEF3C7; border: 1px solid #FCD34D; border-radius: 8px; padding: 12px; margin-top: 20px; font-size: 12px; color: #92400E;">
-            <strong>⚠️ Lưu ý kiểm soát vé tại cửa:</strong>
-            <ul style="margin: 4px 0 0 0; padding-left: 18px;">
-              <li>Mỗi mã QR chỉ có giá trị cho <strong>một lượt quét vào cửa duy nhất</strong>.</li>
-              <li>Mã QR đã được ký số chống làm giả. Vui lòng không chia sẻ mã QR cho người khác.</li>
-              <li>Bạn có thể xuất trình mã QR trực tiếp trên màn hình điện thoại hoặc in ra giấy.</li>
-            </ul>
-          </div>
-        </div>
-
-        <div style="background-color: #F3F4F6; padding: 16px 24px; text-align: center; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB;">
-          Đội ngũ EvenTicketing · Hỗ trợ khách hàng: support@eventticketing.vn
-        </div>
-      </div>
-    `;
+  sendTicketEmail: async ({ to, buyerName = '', order, tickets }) => {
+    if (!to || !Array.isArray(tickets) || tickets.length === 0) throw new Error('Ticket email needs a recipient and tickets.');
+    const withCid = tickets.map((t) => ({ ...t, cid: `ticket-${t.id}@eventticketing` }));
+    const { html, text, subject } = renderTicketEmail({ buyerName, order, tickets: withCid });
+    const attachments = withCid.map((t) => ({ filename: `ve-${t.code}.png`, content: t.qrPng, contentType: 'image/png', cid: t.cid }));
+    const { transport: via } = await deliver({ to, subject, html, text, attachments });
 
     const mailRecord = {
       type: 'ticket',
       to,
-      subject: `[EvenTicketing] Vé điện tử kèm mã QR cho sự kiện: ${eventTitle} (Đơn #${shortOrderId})`,
-      buyerName,
+      subject,
       orderId: order.id,
-      eventTitle,
-      eventVenue,
-      showtimeStr,
       ticketCount: tickets.length,
-      tickets: tickets.map((t) => ({
-        ticketId: t.ticketId,
-        seatLabel: t.seatLabel,
-        categoryName: t.categoryName,
-        unitPrice: t.unitPrice,
-        signature: t.signature,
-        qrPayload: t.qrPayload,
-      })),
+      tickets: withCid.map((t) => ({ id: t.id, seat: t.seat.label, qrCode: t.qrCode, cid: t.cid })),
+      attachments: attachments.map(({ filename, cid, content }) => ({ filename, cid, bytes: content.length })),
       html,
+      transport: via,
       sentAt: new Date(),
     };
-
     sentEmails.push(mailRecord);
     sentTicketEmails.push(mailRecord);
-
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[EmailService] 🎟️ Đã gửi vé điện tử kèm mã QR tới ${to} (Đơn #${shortOrderId}, ${tickets.length} vé)`);
+      console.log(`[EmailService] 🎟️ Đã gửi ${tickets.length} vé (${via}).`);
     }
-
     return mailRecord;
   },
 
@@ -181,3 +170,4 @@ const emailService = {
 };
 
 module.exports = emailService;
+module.exports.escapeHtml = escapeHtml;

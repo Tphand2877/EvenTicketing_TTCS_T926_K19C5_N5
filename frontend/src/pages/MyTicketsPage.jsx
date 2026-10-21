@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import { formatDateTime, formatPrice, getErrorMessage } from '../components/event/eventFormat'
-import { getMyTickets, getOrderTickets } from '../services/ticketService'
+import { getMyTickets, getOrderTickets, sendTicketEmail } from '../services/ticketService'
 
 function TicketCard({ ticket }) {
   return (
@@ -37,6 +37,16 @@ export default function MyTicketsPage() {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [emailState, setEmailState] = useState({ sending: false, message: '', ok: false })
+
+  const handleEmail = async () => {
+    setEmailState({ sending: true, message: '', ok: false })
+    try {
+      setEmailState({ sending: false, message: await sendTicketEmail(orderId), ok: true })
+    } catch (err) {
+      setEmailState({ sending: false, message: getErrorMessage(err, 'Chưa gửi được email. Vui lòng thử lại sau.'), ok: false })
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -64,6 +74,20 @@ export default function MyTicketsPage() {
           <h1 className="text-2xl font-bold text-gray-900">{orderId ? 'Vé của đơn hàng' : 'Vé của tôi'}</h1>
           {orderId && <Link to="/my-tickets" className="text-sm text-pink-600 hover:underline">Xem tất cả vé</Link>}
         </div>
+
+        {/* S-27: vé đã được gửi email sau khi thanh toán; nút này gửi lại khi cần */}
+        {orderId && !loading && !error && tickets.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-3 p-4 rounded-xl bg-indigo-50 text-sm text-indigo-900">
+            <span>📧 Vé đã được gửi về email của bạn sau khi thanh toán.</span>
+            <button type="button" onClick={handleEmail} disabled={emailState.sending}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-60">
+              {emailState.sending ? 'Đang gửi…' : 'Gửi lại vé qua email'}
+            </button>
+            {emailState.message && (
+              <span className={emailState.ok ? 'text-green-700' : 'text-red-700'}>{emailState.message}</span>
+            )}
+          </div>
+        )}
 
         {loading && <p className="text-gray-500">Đang tải vé…</p>}
         {!loading && error && <p className="p-4 rounded-xl bg-red-50 text-red-700">{error}</p>}

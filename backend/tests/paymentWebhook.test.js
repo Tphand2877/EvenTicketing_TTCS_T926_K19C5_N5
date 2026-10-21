@@ -6,6 +6,8 @@ const verifiedResult = Object.freeze({ gatewayTransactionId: 'transaction-1', pr
   orderId: '46000000-0000-4000-8000-000000000001', status: 'succeeded' });
 const rawPayload = '{  "amount": 100000  }';
 const transaction = {};
+// S-27: bộ gửi email vé chạy sau khi webhook commit; ở đây chỉ kiểm nó được gọi sau khi xử lý thành công
+const ticketEmails = { dispatchOrder: jest.fn().mockResolvedValue(true) };
 const fixture = () => {
   const repository = { processOnce: jest.fn(async (_input, process) => ({ duplicate: false, ...await process(transaction) })) };
   const paymentResults = { applyVerifiedResult: jest.fn().mockResolvedValue({ status: 'paid' }), verifyWebhook: jest.fn().mockResolvedValue(verifiedResult) };
@@ -14,7 +16,7 @@ const fixture = () => {
 const appWith = ({ paymentResults, service }) => {
   const app = express();
   app.use(express.json({ verify(req, _res, body) { req.rawBody = Buffer.from(body); } }));
-  app.use('/api/payments', createPaymentWebhookRouter({ paymentResults, service }));
+  app.use('/api/payments', createPaymentWebhookRouter({ paymentResults, service, ticketEmails }));
   return app;
 };
 test('T-46 passes the original T-42 verification token and the receipt transaction unchanged', async () => {
@@ -73,12 +75,15 @@ test('Route delegates exact-byte verification to T-42 even for duplicates and AC
   for (let i = 0; i < 2; i += 1) expect((await request(app).post('/api/payments/webhook').type('json').send(rawPayload)).body).toEqual({ success: true });
   expect(f.paymentResults.verifyWebhook).toHaveBeenCalledTimes(2);
   expect(f.paymentResults.verifyWebhook).toHaveBeenCalledWith(expect.objectContaining({ rawBody: Buffer.from(rawPayload) }));
+  expect(ticketEmails.dispatchOrder).toHaveBeenLastCalledWith(verifiedResult.orderId); // S-27: sau khi commit
 });
 test('A T-42 signature rejection never reaches receipt handling', async () => {
+  ticketEmails.dispatchOrder.mockClear();
   const f = fixture();
   f.paymentResults.verifyWebhook.mockRejectedValue(new Error('signature invalid'));
   expect((await request(appWith(f)).post('/api/payments/webhook').type('json').send(rawPayload)).status).toBe(401);
   expect(f.repository.processOnce).not.toHaveBeenCalled();
+  expect(ticketEmails.dispatchOrder).not.toHaveBeenCalled();
 });
 test('Route rejects unsupported media/oversize raw bodies and hides processing errors', async () => {
   const f = fixture();
@@ -86,10 +91,12 @@ test('Route rejects unsupported media/oversize raw bodies and hides processing e
   expect((await request(app).post('/api/payments/webhook').type('text').send('private')).status).toBe(415);
   expect((await request(app).post('/api/payments/webhook').type('json').send(JSON.stringify({ x: 'a'.repeat(65536) }))).status).toBe(413);
   f.service.handle = jest.fn().mockRejectedValue(new Error('private order payment data'));
+  ticketEmails.dispatchOrder.mockClear();
   const logger = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
     expect((await request(app).post('/api/payments/webhook').type('json').send(rawPayload)).status).toBe(500);
     expect(logger.mock.calls).toEqual([['[PaymentWebhook] Processing failed.']]);
+    expect(ticketEmails.dispatchOrder).not.toHaveBeenCalled(); // xử lý lỗi (rollback) thì không gửi email
   } finally { logger.mockRestore(); }
 });
 test('Missing T-42 service cannot silently accept a payment', () => {
