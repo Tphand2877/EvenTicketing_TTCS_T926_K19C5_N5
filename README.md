@@ -615,3 +615,39 @@ Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T
 `pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
 `ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
 Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
+
+---
+
+## 📋 14. S-32: Xem lịch sử đơn hàng của tôi (SCRUM-220)
+
+> **Story:** `[S-32]` Xem lịch sử đơn hàng của tôi  
+> **Epic:** `[E-05]` Payments & Orders  
+> **Phân loại:** MoSCoW-Should | Sprint-4 | Tier-Next  
+> **Phụ thuộc:** `S-16` (Orders & Order Items schema)
+
+### 📌 Các tính năng & Tiêu chí chấp nhận (AC)
+- **AC1 & NFR: Danh sách đơn hàng mới nhất trước & phân trang:**
+  - Endpoint `GET /api/orders?page=1&limit=10&status=...`:
+    - Truy vấn danh sách đơn hàng thuộc quyền sở hữu của người dùng đăng nhập (`user_id = req.user.userId`).
+    - Sắp xếp mới nhất trước (`orders.created_at DESC, orders.id DESC`).
+    - Trả về thông tin trạng thái (`status`), sự kiện (`title`, `venue`), suất diễn (`starts_at`), số lượng ghế (`seat_count`) kèm chi tiết ghế (`seats: row_label, seat_number, category_name, unit_price`), tổng tiền (`total_amount`, `currency`).
+    - Phân trang chuẩn với metadata: `page`, `limit`, `totalOrders`, `totalPages`, `hasNextPage`, `hasPrevPage`.
+- **AC2: Kiểm soát quyền sở hữu và bảo mật:**
+  - Endpoint `GET /api/orders/:orderId`:
+    - Khi người dùng gọi với mã đơn của người khác: bị từ chối với mã lỗi `403 Forbidden` (`code: 'ORDER_FORBIDDEN'`).
+    - Khi mã đơn không tồn tại: `404 Not Found`.
+    - Khi mã đơn sai định dạng: `400 Bad Request`.
+    - Khi chưa đăng nhập: `401 Unauthorized`.
+- **AC3: Đơn hết hạn hoặc đã hủy:**
+  - Các đơn hàng ở trạng thái `expired` hoặc `cancelled` vẫn được lưu giữ và hiển thị đầy đủ trong lịch sử kèm huy hiệu tương ứng.
+  - Các đơn `pending` nhưng đã vượt quá thời hạn thanh toán (`expires_at <= now()`) được tự động nhận diện và hiển thị trạng thái `expired`.
+- **Giao diện người dùng (`OrderHistoryPage` / `/orders`):**
+  - Thanh tab lọc theo trạng thái: *Tất cả, Đã thanh toán, Chờ thanh toán, Đã hết hạn, Đã hủy*.
+  - Huy hiệu trạng thái trực quan với màu sắc & ký hiệu nhận diện: Đã thanh toán (xanh lá), Chờ thanh toán (vàng hổ phách), Đã hết hạn (đỏ hồng), Đã hủy (xám).
+  - Modal xem chi tiết đơn hàng trực tiếp trên trang.
+  - Nút *"Thanh toán ngay"* cho các đơn hàng `pending` còn trong hạn thanh toán.
+  - Tích hợp link "Đơn hàng" trên thanh điều hướng Header.
+
+### 🧪 Kiểm thử tự động
+- `backend/tests/orderHistoryS32.test.js`: 11 test cases kiểm thử tích hợp API endpoints (`GET /api/orders`, `GET /api/orders/:orderId`, 403 Forbidden khi xem đơn người khác, 401 khi chưa đăng nhập, phân trang, lọc trạng thái, xử lý rỗng, v.v.).
+- `backend/tests/orderModelS32.test.js`: 5 test cases kiểm thử logic tầng model `Order.getOrdersByUserId` và `Order.getOrderDetails` (phân trang, tính effectiveStatus cho đơn hết hạn, kiểm tra quyền sở hữu).
