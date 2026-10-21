@@ -153,7 +153,9 @@ const createOrderFromHold = async ({ holdId, userId, now = new Date() }) => {
       throw orderError('HOLD_FORBIDDEN', 403, 'Bạn không có quyền tạo đơn cho lượt giữ chỗ này.');
     }
     if (hold.status === 'pending_payment' && hold.order_id) {
-      throw orderError('HOLD_ALREADY_ORDERED', 409, 'Lượt giữ chỗ này đã được tạo đơn.');
+      // Chủ lượt giữ gửi lại (tải lại trang thanh toán): trả mã đơn đã tạo để tiếp tục đơn đó
+      throw Object.assign(orderError('HOLD_ALREADY_ORDERED', 409, 'Lượt giữ chỗ này đã được tạo đơn.'),
+        { details: { orderId: hold.order_id } });
     }
     if (hold.status !== 'active' || new Date(hold.expires_at).getTime() <= new Date(now).getTime()) {
       throw orderError('HOLD_EXPIRED', 409, 'Lượt giữ chỗ đã hết hạn hoặc bị hủy.');

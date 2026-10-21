@@ -117,6 +117,9 @@ describeDatabase('S-16: tạo đơn từ ghế đang giữ', () => {
     expect((await createOrder(1, holdId)).status).toBe(201);
     const again = await createOrder(1, holdId);
     expect([again.status, again.body.code]).toEqual([409, 'HOLD_ALREADY_ORDERED']);
+    // Trang thanh toán tải lại: nhận lại mã đơn đã tạo để tiếp tục, không tạo đơn thứ hai
+    const existing = (await database('seat_holds').where({ id: holdId }).first()).order_id;
+    expect(again.body.details).toEqual({ orderId: existing });
 
     const other = await hold(2, 1, 1);
     expect((await createOrder(3, other)).status).toBe(403);
