@@ -1,4 +1,4 @@
-/** T-11/T-15 and future per-seat holds/tickets are test fixtures, not production migrations. */
+/** S-15 prices and future per-seat holds/tickets are test fixtures; T-11/T-15 schema uses the real migrations. */
 process.env.JWT_SECRET = 'public-query-integration-test-only';
 const crypto = require('crypto');
 const path = require('path');
@@ -23,17 +23,10 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
     await mockDatabase.schema.createSchema(schema);
     await mockDatabase.migrate.latest({ directory: path.join(__dirname, '../src/migrations') });
     await mockDatabase.raw(`
-      CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
-      ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'draft';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer, notes text);
-      CREATE INDEX category_showtime ON seat_categories(showtime_id);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
+      -- seats/seat_categories (T-11, migration 007) and showtimes.status (T-15, migration 008)
+      -- now come from real migrations.
+      -- Only the later S-15 price column (and an internal field that must never leak) are simulated.
+      ALTER TABLE seat_categories ADD COLUMN price integer, ADD COLUMN notes text;
       CREATE TABLE fixture_holds (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL, expires_at timestamptz NOT NULL, user_id integer);
@@ -43,7 +36,6 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
       CREATE INDEX tickets_showtime_seat ON fixture_tickets(showtime_id, seat_id);
       CREATE OR REPLACE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
       CREATE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
-      CREATE INDEX showtime_sale_start ON showtimes(status, starts_at, id);
     `);
     await mockDatabase('roles').insert({ id: 1, name: 'organizer' });
     await mockDatabase('users').insert({ id: 1, email: 'query-fixture@example.test', password_hash: 'fixture', role_id: 1 });

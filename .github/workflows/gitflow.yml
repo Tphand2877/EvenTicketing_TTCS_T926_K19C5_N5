@@ -1,0 +1,45 @@
+name: Gitflow
+
+# Validate trusted base-branch rules without executing pull-request code.
+on:
+  pull_request_target:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-rules:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source and target branches
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BASE_BRANCH" in
+            main)
+              if [[ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]]; then
+                echo '::error::Release and hotfix branches must belong to this repository.'
+                exit 1
+              fi
+              case "$HEAD_BRANCH" in
+                release/?*|hotfix/?*) ;;
+                *) echo '::error::Open feature/fix PRs against develop. Only release/* or hotfix/* may target main.'; exit 1 ;;
+              esac ;;
+            develop)
+              case "$HEAD_BRANCH" in
+                feature/?*|bugfix/?*|fix/?*|chore/?*|ci/?*|docs/?*|test/?*|refactor/?*|release/?*|hotfix/?*) ;;
+                main)
+                  [[ "$HEAD_REPOSITORY" == "$BASE_REPOSITORY" ]] || { echo '::error::Back-merges must come from this repository.'; exit 1; } ;;
+                *) echo '::error::Use a task branch (feature/*, fix/*, chore/*, etc.) or back-merge main into develop.'; exit 1 ;;
+              esac ;;
+            *) echo '::error::Unsupported integration target.'; exit 1 ;;
+          esac
+          echo 'Branch flow is valid.'

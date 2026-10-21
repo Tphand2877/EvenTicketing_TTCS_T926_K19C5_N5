@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import SeatHoldTimer from '../components/seatmap/SeatHoldTimer'
+import { getServerNow } from '../services/apiClient'
 import { formatDateTime, formatPrice } from '../components/event/eventFormat'
 import { useAuth } from '../context/AuthContext'
 
@@ -43,9 +44,8 @@ export default function CheckoutPage() {
     payment: '',
   })
   const [errors, setErrors]       = useState({})
-  const [expired, setExpired]     = useState(() => !!hold
-    && Date.parse(hold.expiresAt) <= Date.now() + (hold.serverOffsetMs || 0))
-  const [submitted, setSubmitted] = useState(false)
+const [expired, setExpired] = useState(() => !!hold && new Date(hold.expiresAt).getTime() <= getServerNow()) 
+ const [submitted, setSubmitted] = useState(false)
 
   const setField = (e) => {
     const { name, value } = e.target
@@ -144,11 +144,7 @@ export default function CheckoutPage() {
           {/* Summary */}
           <div className="md:col-span-2">
             <div className="card-auth sticky top-20 space-y-4">
-              <SeatHoldTimer
-                expiresAt={hold.expiresAt}
-                serverOffsetMs={hold.serverOffsetMs || 0}
-                onExpire={() => setExpired(true)}
-              />
+              <SeatHoldTimer expiresAt={hold.expiresAt} onExpire={() => setExpired(true)} />
               <h2 className="font-semibold text-gray-900">Tóm tắt đơn hàng</h2>
               <div className="space-y-3 text-sm text-gray-600">
                 <div>

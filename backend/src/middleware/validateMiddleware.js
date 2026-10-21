@@ -208,6 +208,26 @@ const validateSeatHold = (req, res, next) => {
   next();
 };
 
+// ─── S-05 / S-06 (T-12, T-13): Nạp sơ đồ ghế từ JSON ───────────────────────
+const { validateSeatMapStructure } = require('../utils/seatMapValidator');
+
+/**
+ * Body: { "seats": [ { "row": "A", "number": 1, "category": "VIP" }, ... ] }
+ * Kiểm tra toàn bộ tệp TRƯỚC khi ghi DB; trả đầy đủ toàn bộ danh sách lỗi (T-13 / AC3).
+ * Mỗi lỗi chỉ rõ vị trí ghế (AC1, AC2).
+ * Kết quả chuẩn hoá (row/category đã trim) đặt vào req.seatMap, tổng kết đặt vào req.seatMapSummary.
+ */
+const validateSeatMap = (req, res, next) => {
+  const result = validateSeatMapStructure(req.body);
+  if (!result.isValid) {
+    return respondErrors(res, result.errors);
+  }
+
+  req.seatMap = result.normalized;
+  req.seatMapSummary = result.summary;
+  next();
+};
+
 /** SCRUM-171 / T-23: validate concrete seat IDs without coercing strings. */
 const validateSeatIdList = (req, res, next) => {
   const { seatIds } = req.body || {};
@@ -232,6 +252,7 @@ const validateSeatReleaseParams = (req, res, next) => {
 };
 
 module.exports = {
+  validateSeatMap,
   validateLogin,
   validateRegister,
   validateResendVerification,

@@ -34,34 +34,29 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
     await mockDatabase('users').insert(Array.from({ length: 25 }, (_, i) => ({
       id: i + 1, email: `s12-${i}@example.test`, password_hash: 'fixture', role_id: 1, is_active: true,
     })));
-    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test' });
+    await mockDatabase('events').insert({ id: 1, organizer_id: 1, title: 'S12 fixture', venue: 'Test', status: 'published' });
     await mockDatabase('showtimes').insert([
-      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z' },
-      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z' },
+      { id: 1, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
+      { id: 2, event_id: 1, capacity: 10, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale' },
     ]);
     await mockDatabase.raw(`
-      CREATE TYPE sale_status AS ENUM ('draft', 'on_sale', 'closed');
-      ALTER TABLE showtimes ADD COLUMN status sale_status NOT NULL DEFAULT 'on_sale';
-      CREATE TABLE seat_categories (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        name text NOT NULL, price integer);
-      CREATE TABLE seats (
-        id integer PRIMARY KEY, showtime_id integer NOT NULL REFERENCES showtimes,
-        row_label text NOT NULL, seat_number integer NOT NULL,
-        category_id integer REFERENCES seat_categories,
-        UNIQUE(showtime_id, row_label, seat_number));
+      -- Inventory and sale status come from the real T-11/T-15 migrations.
+      ALTER TABLE seat_categories ADD COLUMN price integer;
       CREATE TABLE fixture_tickets (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL);
       CREATE VIEW public_sold_seats AS
         SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
     `);
-    await mockDatabase('seat_categories').insert({ id: 1, showtime_id: 1, name: 'Standard', price: 100000 });
+    await mockDatabase('seat_categories').insert([
+      { id: 1, showtime_id: 1, name: 'Standard', price: 100000 },
+      { id: 2, showtime_id: 2, name: 'Standard', price: 100000 },
+    ]);
     await mockDatabase('seats').insert([
       { id: 1, showtime_id: 1, row_label: 'A', seat_number: 1, category_id: 1 },
       { id: 2, showtime_id: 1, row_label: 'A', seat_number: 2, category_id: 1 },
       { id: 3, showtime_id: 1, row_label: 'A', seat_number: 3, category_id: 1 },
-      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: null },
+      { id: 4, showtime_id: 2, row_label: 'A', seat_number: 1, category_id: 2 },
     ]);
   }, 30000);
   beforeEach(async () => {
@@ -106,7 +101,7 @@ describeDatabase('SCRUM-176: PostgreSQL expiry and concurrency', () => {
   test('AC3: fresh process clears the entire old backlog and preserves a live hold', async () => {
     const live = await createHold();
     const shows = Array.from({ length: 150 }, (_, i) => ({
-      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z',
+      id: i + 10, event_id: 1, capacity: 1, starts_at: '2099-01-01T00:00:00Z', status: 'on_sale',
     }));
     await mockDatabase('showtimes').insert(shows);
     await mockDatabase('seat_holds').insert(shows.map((s) => ({

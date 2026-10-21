@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import { CATEGORIES, formatDateTime, formatPrice, getErrorMessage } from '../components/event/eventFormat'
+import ShowtimeSalesPanel from '../components/event/ShowtimeSalesPanel'
 import {
   createEvent,
   createShowtime,
@@ -10,12 +11,14 @@ import {
   getMyEvents,
   updateEvent,
 } from '../services/eventService'
+import SeatMapUploadModal from '../components/seatmap/SeatMapUploadModal'
 
 const EMPTY_EVENT = { title: '', venue: '', category: CATEGORIES[0], description: '', image_url: '', published: true }
 const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
 
 /**
  * SCRUM-80 – Organizer quản lý sự kiện & suất diễn
+ * S-05 / S-06 / S-07 – Nạp & kiểm tra sơ đồ ghế trực quan, mở bán / đóng bán từng suất
  */
 export default function OrganizerDashboardPage() {
   const [events, setEvents]   = useState([])
@@ -27,6 +30,10 @@ export default function OrganizerDashboardPage() {
   const [savingEvent, setSavingEvent]   = useState(false)
   const [showtimeFor, setShowtimeFor]   = useState(null) // event id đang mở form suất diễn
   const [showtimeForm, setShowtimeForm] = useState(EMPTY_SHOWTIME)
+  const [panelRefresh, setPanelRefresh] = useState(0) // tải lại danh sách suất sau khi thêm suất
+
+  // S-06 / T-14: Modal tải lên và xem trước sơ đồ ghế trực quan
+  const [uploadSeatMapFor, setUploadSeatMapFor] = useState(null)
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -58,6 +65,13 @@ export default function OrganizerDashboardPage() {
     }
   }
 
+  const handleSeatMapSuccess = async (res) => {
+    setNotice(res?.message || 'Nạp sơ đồ ghế thành công!')
+    setUploadSeatMapFor(null)
+    setPanelRefresh((n) => n + 1)
+    await loadEvents()
+  }
+
   const handleCreateEvent = async (e) => {
     e.preventDefault()
     setSavingEvent(true)
@@ -82,11 +96,12 @@ export default function OrganizerDashboardPage() {
         price: Number(showtimeForm.price),
         capacity: Number(showtimeForm.capacity),
       }),
-      'Đã thêm suất diễn.'
+      'Đã thêm suất diễn ở trạng thái nháp. Hãy nạp sơ đồ ghế rồi bấm “Mở bán”.'
     )
     if (ok) {
       setShowtimeForm(EMPTY_SHOWTIME)
       setShowtimeFor(null)
+      setPanelRefresh((n) => n + 1)
     }
   }
 
@@ -206,10 +221,30 @@ export default function OrganizerDashboardPage() {
                     </div>
                   </form>
                 )}
+
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-1">Suất diễn</h4>
+                  <ShowtimeSalesPanel
+                    eventId={event.id}
+                    refreshKey={panelRefresh}
+                    onChanged={loadEvents}
+                    onUploadSeatMap={(st) => setUploadSeatMapFor({ showtime: st, eventTitle: event.title })}
+                  />
+                </div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* Modal tải lên & xem trước sơ đồ ghế (S-06 / T-14) */}
+        {uploadSeatMapFor && (
+          <SeatMapUploadModal
+            showtime={uploadSeatMapFor.showtime}
+            eventTitle={uploadSeatMapFor.eventTitle}
+            onClose={() => setUploadSeatMapFor(null)}
+            onSuccess={handleSeatMapSuccess}
+          />
+        )}
       </main>
       <Footer />
     </div>

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './routes/PrivateRoute'
@@ -8,9 +9,17 @@ import RegisterPage    from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
+import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
+
+// SCRUM-203: mock payment gateway page. Only exists when the flag is on,
+// so it is left out of production builds (the dynamic import is dropped).
+const MOCK_GATEWAY_ENABLED = import.meta.env.VITE_ENABLE_MOCK_GATEWAY === 'true'
+const MockGatewayPage = MOCK_GATEWAY_ENABLED
+  ? lazy(() => import('./pages/MockGatewayPage'))
+  : null
 
 export default function App() {
   return (
@@ -26,8 +35,17 @@ export default function App() {
           <Route path="/" element={<Navigate to="/events" replace />} />
 
           {/* ── Public browsing routes ───────────────────────── */}
-          <Route path="/events"     element={<EventListPage />} />
-          <Route path="/events/:id" element={<EventDetailPage />} />
+          <Route path="/events"         element={<EventListPage />} />
+          <Route path="/events/:id"     element={<EventDetailPage />} />
+          <Route path="/showtimes/:id" element={<ShowtimeDetailPage />} />
+
+          {/* ── Mock payment gateway (SCRUM-203, flag only) ──── */}
+          {MOCK_GATEWAY_ENABLED && (
+            <Route
+              path="/mock-gateway"
+              element={<Suspense fallback={null}><MockGatewayPage /></Suspense>}
+            />
+          )}
 
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>

@@ -1,10 +1,22 @@
 /** Unit/API fixture only. PostgreSQL integration tests verify real locking. */
 const createMemoryRepository = (showtimes) => {
   const rows = new Map();
+  const locks = new Map();
   return {
     rows,
-    reset: () => rows.clear(),
-    withShowtimeLock: async (id, fn) => fn(null, showtimes.find((s) => s.id === id)),
+    reset: () => { rows.clear(); locks.clear(); },
+    withShowtimeLock: async (id, fn) => {
+      const prev = locks.get(id) || Promise.resolve();
+      let release;
+      const current = new Promise((resolve) => { release = resolve; });
+      locks.set(id, prev.then(() => current));
+      await prev;
+      try {
+        return await fn(null, showtimes.find((s) => s.id === id));
+      } finally {
+        release();
+      }
+    },
     currentTime: async (_transaction, now) => new Date(now ?? Date.now()),
     findById: async (id) => rows.get(id),
     findActiveUserHold: async (_transaction, showtimeId, userId) => [...rows.values()]
