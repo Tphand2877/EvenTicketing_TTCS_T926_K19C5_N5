@@ -13,6 +13,7 @@ import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -61,6 +62,8 @@ export default function App() {
           {/* ── Admin-only routes ─────────────────────────────── */}
           <Route element={<PrivateRoute roles={['admin']} />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
+            {/* S-28: tài khoản nhân viên và vai trò */}
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           {/* ── 404 fallback ─────────────────────────────────── */}

@@ -615,3 +615,41 @@ Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T
 `pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
 `ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
 Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
+
+---
+
+## 👥 15. S-28: Admin tạo tài khoản nhân viên và gán vai trò
+
+**Vai trò mới**
+- `staff`: nhân viên soát vé, quét QR tại cổng.
+- `supervisor`: trưởng ca, quét QR và được cho vào có ghi chú khi vé đã dùng (S-31).
+
+Cách hai vai trò này được tạo:
+- DB mới: `npm run seed` tạo đủ 5 vai trò.
+- DB đang chạy: migration `202610210201_add_staff_roles` tự thêm 2 vai trò mới.
+
+**API (chỉ admin; vai trò khác nhận 403)**
+
+| API | Mô tả |
+| --- | --- |
+| `GET /api/admin/roles` | Danh sách vai trò |
+| `GET /api/admin/users?role=&q=&page=` | Danh sách tài khoản, lọc theo vai trò, tìm theo tên hoặc email (20 tài khoản/trang) |
+| `POST /api/admin/users` `{ email, fullName, password, role }` | Tạo tài khoản. Dùng được ngay, không cần kích hoạt qua email. Mật khẩu ≥ 8 ký tự, hash bằng Argon2id. Email trùng trả `409` |
+| `PATCH /api/admin/users/:id` `{ role?, isActive?, fullName? }` | Đổi vai trò, khoá hoặc mở khoá tài khoản. Admin không tự đổi vai trò hay tự khoá chính mình (`409 CANNOT_CHANGE_SELF`) |
+
+Lưu ý:
+- Vai trò mới áp dụng từ lần đăng nhập tiếp theo, vì JWT cũ vẫn mang vai trò cũ.
+- Tài khoản bị khoá không đăng nhập được.
+- Màn soát vé (S-30) kiểm tra vai trò và trạng thái trong DB mỗi lần quét, nên khoá tài khoản có hiệu lực ngay.
+
+**Giao diện.** Trang `/admin/users` (menu "Tài khoản" của admin) có:
+- Form tạo tài khoản.
+- Bảng tài khoản: lọc, tìm, đổi vai trò ngay trong bảng, khoá/mở khoá.
+
+**Kiểm thử.** `tests/staffAccounts.integration.test.js` (`RUN_STAFF_ACCOUNT_DB_TESTS=1`), chạy trên PostgreSQL thật và đăng nhập thật qua `/api/auth/login`, kiểm:
+- Tạo tài khoản rồi đăng nhập được ngay với đúng vai trò.
+- Đổi vai trò; tài khoản bị khoá không đăng nhập được.
+- Chỉ admin được tạo hoặc sửa tài khoản.
+- Dữ liệu sai bị từ chối.
+- Admin không tự khoá được chính mình.
+- Lọc và tìm kiếm.
