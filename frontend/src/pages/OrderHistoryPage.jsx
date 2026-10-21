@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import Modal from '../components/common/Modal'
-import { getMyOrders, getOrderDetail } from '../services/orderService'
+import { getMyOrders, getOrderDetail, initiatePayment } from '../services/orderService'
 
 const STATUS_TABS = [
   { key: 'all', label: 'Tất cả' },
@@ -11,6 +11,7 @@ const STATUS_TABS = [
   { key: 'pending', label: 'Chờ thanh toán' },
   { key: 'expired', label: 'Đã hết hạn' },
   { key: 'cancelled', label: 'Đã hủy' },
+  { key: 'needs_review', label: 'Đang đối soát' },
 ]
 
 const formatCurrency = (amount) =>
@@ -61,6 +62,13 @@ const renderStatusBadge = (status) => {
           Đã hủy
         </span>
       )
+    case 'needs_review':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 border border-sky-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+          Đang đối soát
+        </span>
+      )
     default:
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
@@ -68,6 +76,48 @@ const renderStatusBadge = (status) => {
         </span>
       )
   }
+}
+
+/**
+ * Đơn chờ thanh toán: gọi API thanh toán S-18 rồi chuyển sang cổng (MoMo).
+ * Đơn đã thanh toán: mở vé điện tử (S-25).
+ */
+function OrderActions({ order, size = 'sm' }) {
+  const [state, setState] = useState({ busy: false, message: '' })
+  const pad = size === 'sm' ? 'px-4 py-1.5 rounded-lg' : 'px-5 py-2 rounded-xl'
+
+  const pay = async () => {
+    setState({ busy: true, message: '' })
+    try {
+      const payment = await initiatePayment(order.id)
+      if (payment?.redirectUrl) {
+        window.location.assign(payment.redirectUrl)
+        return
+      }
+      setState({ busy: false, message: 'Đang tạo yêu cầu thanh toán, vui lòng thử lại sau vài giây.' })
+    } catch (err) {
+      setState({ busy: false, message: err.response?.data?.message || 'Không tạo được yêu cầu thanh toán.' })
+    }
+  }
+
+  if (order.status === 'paid') {
+    return (
+      <Link to={`/my-tickets?orderId=${order.id}`}
+        className={`${pad} text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors`}>
+        Xem vé
+      </Link>
+    )
+  }
+  if (order.status !== 'pending') return null
+  return (
+    <>
+      {state.message && <span className="text-xs text-red-600">{state.message}</span>}
+      <button type="button" onClick={pay} disabled={state.busy}
+        className={`${pad} text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 shadow-sm transition-all disabled:opacity-60`}>
+        {state.busy ? 'Đang chuyển…' : 'Thanh toán ngay'}
+      </button>
+    </>
+  )
 }
 
 export default function OrderHistoryPage() {
@@ -298,15 +348,7 @@ export default function OrderHistoryPage() {
                     >
                       Xem chi tiết
                     </button>
-
-                    {order.status === 'pending' && (
-                      <Link
-                        to={`/checkout?orderId=${order.id}`}
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 rounded-lg shadow-sm transition-all"
-                      >
-                        Thanh toán ngay
-                      </Link>
-                    )}
+                    <OrderActions order={order} />
                   </div>
                 </div>
               )
@@ -435,14 +477,7 @@ export default function OrderHistoryPage() {
               >
                 Đóng
               </button>
-              {detailOrder.status === 'pending' && (
-                <Link
-                  to={`/checkout?orderId=${detailOrder.id}`}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 rounded-xl shadow-md transition-all"
-                >
-                  Thanh toán ngay
-                </Link>
-              )}
+              <OrderActions order={detailOrder} size="md" />
             </div>
           </div>
         ) : null}

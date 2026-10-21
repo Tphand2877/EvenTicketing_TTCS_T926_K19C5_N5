@@ -88,7 +88,13 @@ const getOrdersByUserId = async ({
 
   // Base query for user's orders
   const baseQuery = database('orders').where({ user_id: userId });
-  if (status && ['pending', 'paid', 'cancelled', 'expired'].includes(status)) {
+  // Đơn pending đã quá hạn được hiển thị là "expired" (AC3), nên bộ lọc cũng phải xếp nó vào "expired"
+  if (status === 'expired') {
+    baseQuery.where((q) => q.where('status', 'expired')
+      .orWhere((overdue) => overdue.where('status', 'pending').where('expires_at', '<=', database.raw('clock_timestamp()'))));
+  } else if (status === 'pending') {
+    baseQuery.where('status', 'pending').where('expires_at', '>', database.raw('clock_timestamp()'));
+  } else if (['paid', 'cancelled', 'needs_review'].includes(status)) {
     baseQuery.where({ status });
   }
 

@@ -27,7 +27,17 @@ export const getOrderDetail = async (orderId) => {
   return response.data
 }
 
+/**
+ * Thanh toán đơn hàng qua cổng (S-18 / T-41)
+ * @param {string} orderId
+ */
+export const initiatePayment = async (orderId) => {
+  const { data } = await apiClient.post(`/payments/orders/${orderId}`)
+  return data.data.payment
+}
+
 export default {
   getMyOrders,
   getOrderDetail,
+  initiatePayment,
 }
