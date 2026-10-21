@@ -1,5 +1,7 @@
 # EvenTicketing - Hệ thống Bán Vé Sự Kiện Trực Tuyến & Sơ Đồ Ghế
 
+> S-31 / Minh Quang: phần backend chống dùng lại vé và ghi nhận cho vào có ghi chú đang được triển khai; xem [phạm vi và hợp đồng tích hợp S-30](docs/S-31-ticket-admission.md).
+
 > **Dự án thực tập chuyên sâu:** `EvenTicketing_TTCS_T926_K19C5_N5`  
 > **Kiến trúc:** Monorepo (React 18 + Vite 5 Frontend | Express.js + Knex.js Backend | PostgreSQL 16 | Docker Compose)  
 > **Trạng thái kiểm thử:** 13/13 Test Suites Passed (75/75 Tests Passed, Coverage ~85%) | ESLint 0 Errors / 0 Warnings
