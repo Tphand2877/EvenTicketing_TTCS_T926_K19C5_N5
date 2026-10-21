@@ -12,6 +12,7 @@ const roleLabels = {
 
 const getNavLinks = (role) => [
   { to: '/events', label: 'Sự kiện' },
+  ...(role ? [{ to: '/my-tickets', label: 'Vé của tôi' }] : []),
   ...(role === 'organizer' || role === 'admin' ? [{ to: '/organizer', label: 'Quản lý' }] : []),
   ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }, { to: '/admin/users', label: 'Tài khoản' }] : []),
 ]

@@ -14,6 +14,8 @@ import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import MyTicketsPage from './pages/MyTicketsPage'
+import PaymentResultPage from './pages/PaymentResultPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -51,6 +53,11 @@ export default function App() {
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
             <Route path="/checkout" element={<CheckoutPage />} />
+            {/* S-25: vé điện tử kèm QR */}
+            <Route path="/my-tickets" element={<MyTicketsPage />} />
+            {/* S-22: MoMo trả người mua về MOMO_REDIRECT_URL (/payment/return?orderId=...) */}
+            <Route path="/payment/return" element={<PaymentResultPage />} />
+            <Route path="/payment-result" element={<PaymentResultPage />} />
           </Route>
 
           {/* ── Organizer-only routes ────────────────────────── */}
