@@ -100,7 +100,12 @@ export default function CheckoutPage() {
         }
       } catch (err) {
         if (!isMounted) return
-        if (err.response?.status === 409) {
+        const code = err.response?.data?.code
+        const existingOrderId = err.response?.data?.details?.orderId
+        if (code === 'HOLD_ALREADY_ORDERED' && existingOrderId) {
+          // Tải lại trang (hoặc React StrictMode gọi 2 lần): tiếp tục đúng đơn đã tạo từ lượt giữ này
+          await loadExistingOrder(existingOrderId)
+        } else if (code === 'HOLD_EXPIRED') {
           setExpired(true)
         } else {
           setErrorMsg(err.response?.data?.message || 'Không thể tạo đơn hàng từ lượt giữ chỗ.')
