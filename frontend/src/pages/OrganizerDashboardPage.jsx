@@ -4,6 +4,7 @@ import Header from '../components/common/Header'
 import Footer from '../components/common/Footer'
 import { CATEGORIES, formatDateTime, formatPrice, getErrorMessage } from '../components/event/eventFormat'
 import ShowtimeSalesPanel from '../components/event/ShowtimeSalesPanel'
+import EventGatesEditor from '../components/event/EventGatesEditor'
 import {
   createEvent,
   createShowtime,
@@ -12,6 +13,7 @@ import {
   updateEvent,
 } from '../services/eventService'
 import SeatMapUploadModal from '../components/seatmap/SeatMapUploadModal'
+import ShowtimePricingModal from '../components/seatmap/ShowtimePricingModal'
 
 const EMPTY_EVENT = { title: '', venue: '', category: CATEGORIES[0], description: '', image_url: '', published: true }
 const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
@@ -19,6 +21,7 @@ const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
 /**
  * SCRUM-80 – Organizer quản lý sự kiện & suất diễn
  * S-05 / S-06 / S-07 – Nạp & kiểm tra sơ đồ ghế trực quan, mở bán / đóng bán từng suất
+ * S-15 / T-35 – Đặt giá vé cho từng hạng ghế của suất diễn
  */
 export default function OrganizerDashboardPage() {
   const [events, setEvents]   = useState([])
@@ -34,6 +37,8 @@ export default function OrganizerDashboardPage() {
 
   // S-06 / T-14: Modal tải lên và xem trước sơ đồ ghế trực quan
   const [uploadSeatMapFor, setUploadSeatMapFor] = useState(null)
+  // S-15 / T-35: Modal đặt giá cho từng hạng ghế của suất diễn
+  const [pricingFor, setPricingFor] = useState(null)
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -68,6 +73,13 @@ export default function OrganizerDashboardPage() {
   const handleSeatMapSuccess = async (res) => {
     setNotice(res?.message || 'Nạp sơ đồ ghế thành công!')
     setUploadSeatMapFor(null)
+    setPanelRefresh((n) => n + 1)
+    await loadEvents()
+  }
+
+  const handlePricingSuccess = async (res) => {
+    setNotice(res?.message || 'Đã cập nhật giá vé thành công!')
+    setPricingFor(null)
     setPanelRefresh((n) => n + 1)
     await loadEvents()
   }
@@ -179,6 +191,7 @@ export default function OrganizerDashboardPage() {
                     <p className="text-sm text-gray-500">
                       {event.showtime_count} suất diễn · Từ {formatPrice(event.min_price)} · Gần nhất: {formatDateTime(event.next_starts_at)}
                     </p>
+                    <EventGatesEditor eventId={event.id} />
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm">
                     {event.status === 'published' && (
@@ -229,6 +242,7 @@ export default function OrganizerDashboardPage() {
                     refreshKey={panelRefresh}
                     onChanged={loadEvents}
                     onUploadSeatMap={(st) => setUploadSeatMapFor({ showtime: st, eventTitle: event.title })}
+                    onSetPricing={(st) => setPricingFor({ showtime: st, eventTitle: event.title })}
                   />
                 </div>
               </div>
@@ -243,6 +257,16 @@ export default function OrganizerDashboardPage() {
             eventTitle={uploadSeatMapFor.eventTitle}
             onClose={() => setUploadSeatMapFor(null)}
             onSuccess={handleSeatMapSuccess}
+          />
+        )}
+
+        {/* Modal đặt giá vé theo hạng ghế (S-15 / T-35) */}
+        {pricingFor && (
+          <ShowtimePricingModal
+            showtime={pricingFor.showtime}
+            eventTitle={pricingFor.eventTitle}
+            onClose={() => setPricingFor(null)}
+            onSuccess={handlePricingSuccess}
           />
         )}
       </main>

@@ -5,6 +5,8 @@ jest.mock('../src/models/Order', () => ({
   claimPaymentRequest: jest.fn(),
   storePaymentUrl: jest.fn(),
   markPaymentRequestIndeterminate: jest.fn(),
+  getOrderDetails: jest.fn(),
+  createOrderFromHold: jest.fn(),
 }));
 jest.mock('../src/payments/createPaymentGateway', () => ({
   createPaymentGateway: jest.fn(),

@@ -38,11 +38,11 @@ const statusOf = async (id) => (await mockDatabase('showtimes').where({ id }).fi
 const logsOf = (id) => mockDatabase('showtime_status_logs').where({ showtime_id: id }).orderBy('id');
 
 let nextShowtimeId = 100;
-const createShowtime = async ({ withSeats = true, startsAt = FUTURE, eventId = 1, capacity = 50 } = {}) => {
+const createShowtime = async ({ withSeats = true, startsAt = FUTURE, eventId = 1, capacity = 50, categoryPrice = 100000 } = {}) => {
   const id = nextShowtimeId++;
   await mockDatabase('showtimes').insert({ id, event_id: eventId, capacity, starts_at: startsAt });
   if (withSeats) {
-    const [category] = await mockDatabase('seat_categories').insert({ showtime_id: id, name: 'Thường' }).returning('id');
+    const [category] = await mockDatabase('seat_categories').insert({ showtime_id: id, name: 'Thường', price: categoryPrice }).returning('id');
     await mockDatabase('seats').insert(Array.from({ length: capacity }, (_, i) => ({
       showtime_id: id, category_id: category.id, row_label: 'A', seat_number: i + 1,
     })));
@@ -114,6 +114,23 @@ describeDatabase('S-07: mở bán / đóng bán trên PostgreSQL', () => {
     expect(res.body).toMatchObject({ code: 'NO_SEAT_MAP', message: expect.stringContaining('chưa có sơ đồ ghế') });
     expect(await statusOf(id)).toBe('draft');
     expect(await logsOf(id)).toHaveLength(0);
+  });
+
+  test('S-15 AC2: một hạng ghế chưa có giá → mở bán bị chặn kèm tên hạng còn thiếu giá', async () => {
+    const id = await createShowtime({ categoryPrice: null });
+    const res = await open(id);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'CATEGORY_MISSING_PRICE',
+      message: expect.stringContaining('Thường'),
+    });
+    expect(await statusOf(id)).toBe('draft');
+
+    // Sau khi đặt giá cho hạng ghế đó -> mở bán thành công
+    await mockDatabase('seat_categories').where({ showtime_id: id, name: 'Thường' }).update({ price: 150000 });
+    const retry = await open(id);
+    expect(retry.status).toBe(200);
+    expect(await statusOf(id)).toBe('on_sale');
   });
 
   test('AC3: đóng bán → không giữ chỗ mới được; hold đang có vẫn huỷ/hết hạn/được dọn bình thường', async () => {

@@ -23,10 +23,10 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
     await mockDatabase.schema.createSchema(schema);
     await mockDatabase.migrate.latest({ directory: path.join(__dirname, '../src/migrations') });
     await mockDatabase.raw(`
-      -- seats/seat_categories (T-11, migration 007) and showtimes.status (T-15, migration 008)
+      -- seats/seat_categories (T-11), showtimes.status (T-15) and seat_categories.price (S-15, migration 009)
       -- now come from real migrations.
-      -- Only the later S-15 price column (and an internal field that must never leak) are simulated.
-      ALTER TABLE seat_categories ADD COLUMN price integer, ADD COLUMN notes text;
+      -- Only an internal field that must never leak is simulated.
+      ALTER TABLE seat_categories ADD COLUMN notes text;
       CREATE TABLE fixture_holds (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL,
         status text NOT NULL, expires_at timestamptz NOT NULL, user_id integer);
@@ -34,8 +34,8 @@ describeDatabase('Minh Quang T-17/T-19: real PostgreSQL query contract', () => {
       CREATE TABLE fixture_tickets (
         id serial PRIMARY KEY, showtime_id integer NOT NULL, seat_id integer NOT NULL, status text NOT NULL);
       CREATE INDEX tickets_showtime_seat ON fixture_tickets(showtime_id, seat_id);
-      CREATE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
-      CREATE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
+      CREATE OR REPLACE VIEW public_seat_holds AS SELECT showtime_id, seat_id, status, expires_at FROM fixture_holds;
+      CREATE OR REPLACE VIEW public_sold_seats AS SELECT showtime_id, seat_id FROM fixture_tickets WHERE status = 'confirmed';
     `);
     await mockDatabase('roles').insert({ id: 1, name: 'organizer' });
     await mockDatabase('users').insert({ id: 1, email: 'query-fixture@example.test', password_hash: 'fixture', role_id: 1 });

@@ -41,6 +41,7 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-development}
+      DEPLOY_ENV: ${DEPLOY_ENV:-}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
@@ -53,13 +54,24 @@ services:
       SEAT_HOLD_CLEANUP_INTERVAL_MS: ${SEAT_HOLD_CLEANUP_INTERVAL_MS:-30000}
       # S-21 / T-49: backend chỉ nhận request qua Nginx, tin đúng 1 lớp proxy để lấy IP nguồn
       TRUST_PROXY: '1'
-      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-momo}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-}
+      MOCK_PAYMENT_WEBHOOK_SECRET: ${MOCK_PAYMENT_WEBHOOK_SECRET:-}
+      MOCK_PAYMENT_PUBLIC_ORIGIN: ${MOCK_PAYMENT_PUBLIC_ORIGIN:-http://localhost:3000}
       MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}
       MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-}
       MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-}
       MOMO_API_BASE_URL: ${MOMO_API_BASE_URL:-https://test-payment.momo.vn}
       MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-http://localhost:8080/payment/return}
       MOMO_IPN_URL: ${MOMO_IPN_URL:-}
+      # S-26: khoá ký QR trên vé (>= 32 ký tự). Để trống thì dẫn xuất từ JWT_SECRET.
+      TICKET_QR_SECRET: ${TICKET_QR_SECRET:-}
+      # S-27: SMTP gửi email vé. Không đặt SMTP_HOST thì chỉ ghi log.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-EvenTicketing <no-reply@eventticketing.local>}
 
     ports:
       - "3000:3000"

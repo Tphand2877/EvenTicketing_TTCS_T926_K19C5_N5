@@ -1,6 +1,6 @@
 const Order = require('../src/models/Order');
 
-describe('Order Model - getOrdersByUserId and getOrderDetails (S-32)', () => {
+describe('Order Model - getOrdersByUserId and getOrderHistoryDetail (S-32)', () => {
   describe('getOrdersByUserId', () => {
     test('xử lý phân trang mặc định và trả về danh sách đơn hàng đã gán thêm thông tin', async () => {
       const mockDatabase = jest.fn((table) => {
@@ -130,7 +130,7 @@ describe('Order Model - getOrdersByUserId and getOrderDetails (S-32)', () => {
     });
   });
 
-  describe('getOrderDetails', () => {
+  describe('getOrderHistoryDetail', () => {
     test('ném lỗi ORDER_NOT_FOUND khi đơn hàng không tồn tại', async () => {
       const mockDatabase = jest.fn(() => ({
         select: jest.fn().mockReturnThis(),
@@ -140,7 +140,7 @@ describe('Order Model - getOrdersByUserId and getOrderDetails (S-32)', () => {
       mockDatabase.raw = (str) => str;
 
       await expect(
-        Order.getOrderDetails({ orderId: 'not-found', userId: 1, database: mockDatabase })
+        Order.getOrderHistoryDetail({ orderId: 'not-found', userId: 1, database: mockDatabase })
       ).rejects.toMatchObject({
         code: 'ORDER_NOT_FOUND',
         status: 404,
@@ -159,7 +159,7 @@ describe('Order Model - getOrdersByUserId and getOrderDetails (S-32)', () => {
       mockDatabase.raw = (str) => str;
 
       await expect(
-        Order.getOrderDetails({ orderId: 'ord-abc', userId: 1, database: mockDatabase })
+        Order.getOrderHistoryDetail({ orderId: 'ord-abc', userId: 1, database: mockDatabase })
       ).rejects.toMatchObject({
         code: 'ORDER_FORBIDDEN',
         status: 403,
@@ -228,7 +228,7 @@ describe('Order Model - getOrdersByUserId and getOrderDetails (S-32)', () => {
       });
       mockDatabase.raw = (str) => str;
 
-      const result = await Order.getOrderDetails({
+      const result = await Order.getOrderHistoryDetail({
         orderId: 'ord-123',
         userId: 1,
         database: mockDatabase,

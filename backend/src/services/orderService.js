@@ -34,7 +34,7 @@ const createOrderService = ({ orders = Order } = {}) => ({
     }
 
     try {
-      return await orders.getOrderDetails({ orderId, userId });
+      return await orders.getOrderHistoryDetail({ orderId, userId });
     } catch (err) {
       if (err.code === 'ORDER_NOT_FOUND') {
         throw new OrderServiceError('ORDER_NOT_FOUND', 'Không tìm thấy đơn hàng.', 404);

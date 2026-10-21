@@ -10,7 +10,7 @@ jest.mock('../src/models/Order', () => ({
   storePaymentUrl: jest.fn(),
   markPaymentRequestIndeterminate: jest.fn(),
   getOrdersByUserId: jest.fn(),
-  getOrderDetails: jest.fn(),
+  getOrderHistoryDetail: jest.fn(),
 }));
 
 const Order = require('../src/models/Order');
@@ -168,7 +168,7 @@ describe('SCRUM-220 [S-32] - Xem lịch sử đơn hàng của tôi', () => {
       const err = new Error('Bạn không có quyền xem đơn hàng này.');
       err.code = 'ORDER_FORBIDDEN';
       err.status = 403;
-      Order.getOrderDetails.mockRejectedValueOnce(err);
+      Order.getOrderHistoryDetail.mockRejectedValueOnce(err);
 
       const foreignOrderId = '11111111-1111-4111-8111-111111111111';
       const res = await request(app)
@@ -179,7 +179,7 @@ describe('SCRUM-220 [S-32] - Xem lịch sử đơn hàng của tôi', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('ORDER_FORBIDDEN');
       expect(res.body.message).toContain('Bạn không có quyền xem đơn hàng này');
-      expect(Order.getOrderDetails).toHaveBeenCalledWith({
+      expect(Order.getOrderHistoryDetail).toHaveBeenCalledWith({
         orderId: foreignOrderId,
         userId: 2,
       });
@@ -189,7 +189,7 @@ describe('SCRUM-220 [S-32] - Xem lịch sử đơn hàng của tôi', () => {
       const err = new Error('Không tìm thấy đơn hàng.');
       err.code = 'ORDER_NOT_FOUND';
       err.status = 404;
-      Order.getOrderDetails.mockRejectedValueOnce(err);
+      Order.getOrderHistoryDetail.mockRejectedValueOnce(err);
 
       const nonExistentId = '99999999-9999-4999-8999-999999999999';
       const res = await request(app)
@@ -207,14 +207,14 @@ describe('SCRUM-220 [S-32] - Xem lịch sử đơn hàng của tôi', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_ORDER_ID');
-      expect(Order.getOrderDetails).not.toHaveBeenCalled();
+      expect(Order.getOrderHistoryDetail).not.toHaveBeenCalled();
     });
 
     test('chủ đơn hàng truy vấn thành công chi tiết đơn của chính mình', async () => {
       const orderDetail = {
         ...mockOrdersList[0],
       };
-      Order.getOrderDetails.mockResolvedValueOnce(orderDetail);
+      Order.getOrderHistoryDetail.mockResolvedValueOnce(orderDetail);
 
       const res = await request(app)
         .get(`/api/orders/${orderDetail.id}`)
