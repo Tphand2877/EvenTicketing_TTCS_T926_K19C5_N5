@@ -26,7 +26,7 @@ test('Server waits for startup cleanup and closes HTTP, scheduler and DB exactly
   const server = new EventEmitter();
   server.close = jest.fn((callback) => callback());
   const application = { listen: jest.fn(() => server) };
-  const started = startServer({ app: application, port: 3000 });
+  const started = startServer({ app: application, port: 3000, runtimeFactory: () => ({}) });
   expect(application.listen).not.toHaveBeenCalled();
   ready();
   await Promise.resolve();
@@ -39,4 +39,13 @@ test('Server waits for startup cleanup and closes HTTP, scheduler and DB exactly
   expect(mockStop).toHaveBeenCalledTimes(1);
   expect(mockOrderStop).toHaveBeenCalledTimes(1);
   expect(mockDestroy).toHaveBeenCalledTimes(1);
+});
+
+test('invalid payment configuration prevents jobs and the HTTP listener', async () => {
+  const application = { listen: jest.fn() };
+  await expect(startServer({ app: application, runtimeFactory: () => {
+    throw new Error('Mock payment gateway is forbidden in production.');
+  } })).rejects.toThrow('forbidden in production');
+  expect(application.listen).not.toHaveBeenCalled();
+  expect(require('../src/jobs/seatHoldCleanupJob').startSeatHoldCleanupJob).not.toHaveBeenCalled();
 });
