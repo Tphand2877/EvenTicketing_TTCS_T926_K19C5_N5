@@ -25,6 +25,7 @@ const EVENTS = [
     title: 'Hòa nhạc Symphony Mùa Thu 2026',
     category: 'Âm nhạc',
     venue: 'Nhà hát Lớn Hà Nội',
+    image_url: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=1200&q=80',
     description: 'Đêm nhạc giao hưởng với các tác phẩm kinh điển của Beethoven, Mozart và các nhạc sĩ Việt Nam đương đại.',
     showtimes: [{ days: 14, hour: 20, price: 350000, capacity: 120 }, { days: 15, hour: 20, price: 450000, capacity: 120 }],
   },
@@ -32,6 +33,7 @@ const EVENTS = [
     title: 'Vietnam Tech Summit 2026',
     category: 'Công nghệ',
     venue: 'GEM Center, TP.HCM',
+    image_url: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
     description: 'Hội nghị công nghệ với các diễn giả về AI, cloud và khởi nghiệp.',
     showtimes: [{ days: 21, hour: 9, price: 500000, capacity: 500 }],
   },
@@ -39,6 +41,7 @@ const EVENTS = [
     title: 'V.League 2026 – Hà Nội FC vs HAGL',
     category: 'Thể thao',
     venue: 'Sân vận động Hàng Đẫy',
+    image_url: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=1200&q=80',
     description: 'Trận cầu tâm điểm vòng 10 V.League.',
     showtimes: [{ days: 29, hour: 19, price: 150000, capacity: 300 }],
   },
@@ -46,6 +49,7 @@ const EVENTS = [
     title: 'Stand-up Comedy Night',
     category: 'Giải trí',
     venue: "B'estival, Đà Nẵng",
+    image_url: 'https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=1200&q=80',
     description: 'Một đêm cười thả ga cùng các comedian trẻ.',
     showtimes: [{ days: 35, hour: 21, price: 250000, capacity: 80 }],
   },
@@ -53,6 +57,7 @@ const EVENTS = [
     title: 'Triển lãm Nghệ thuật Đương đại',
     category: 'Nghệ thuật',
     venue: 'Bảo tàng Mỹ thuật TP.HCM',
+    image_url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1200&q=80',
     description: 'Hơn 100 tác phẩm của các họa sĩ trẻ Việt Nam.',
     showtimes: [{ days: 40, hour: 10, price: 80000, capacity: 200 }],
   },
@@ -60,6 +65,7 @@ const EVENTS = [
     title: 'Gaming Festival Vietnam 2026',
     category: 'Công nghệ',
     venue: 'ICH, TP.HCM',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80',
     description: 'Giải đấu eSports và khu trải nghiệm game mới nhất.',
     showtimes: [{ days: 50, hour: 10, price: 200000, capacity: 1000 }],
   },
@@ -98,7 +104,12 @@ const seedSeatMap = async (showtimeId, capacity) => {
     let created = 0;
     for (const { showtimes, ...event } of EVENTS) {
       const exists = await knex('events').where({ title: event.title }).first();
-      if (exists) continue;
+      if (exists) {
+        if (!exists.image_url && event.image_url) {
+          await knex('events').where({ id: exists.id }).update({ image_url: event.image_url });
+        }
+        continue;
+      }
 
       const [row] = await knex('events')
         .insert({ ...event, organizer_id: organizer.id, status: 'published' })

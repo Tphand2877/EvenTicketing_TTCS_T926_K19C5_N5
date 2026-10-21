@@ -11,6 +11,7 @@ import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
 import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
+import PaymentResultPage from './pages/PaymentResultPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 
@@ -50,6 +51,8 @@ export default function App() {
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
             <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/payment-result" element={<PaymentResultPage />} />
+            <Route path="/payment/return" element={<PaymentResultPage />} />
           </Route>
 
           {/* ── Organizer-only routes ────────────────────────── */}

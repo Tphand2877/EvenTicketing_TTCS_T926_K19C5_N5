@@ -615,3 +615,24 @@ Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T
 `pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
 `ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
 Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
+
+
+---
+
+## 🎟️ 14. SCRUM-223 [S-27] & SCRUM-35 [E-11]: Vé gửi qua email kèm mã QR (Cao Long)
+
+> **Story:** `[S-27]` Vé gửi qua email kèm mã QR (SCRUM-223)  
+> **Epic:** `[E-11]` Public Event Pages, Sales Controls & Notifications / Trang công khai, mở bán và thông báo (SCRUM-35)  
+> **Người thực hiện:** Cao Long (CL) | Sprint 4 | Story Points: 2  
+
+### 📌 Chi tiết tính năng
+- **Gửi email tự động sau thanh toán:** Khi đơn hàng chuyển trạng thái `paid`, hệ thống tự động sinh vé kèm mã QR có chữ ký số và gửi email xác nhận vé đến email của người mua (`emailService.sendTicketEmail`).
+- **Mã QR có chữ ký số bảo mật (S-26/S-27):** Mỗi vé có mã canonical `TKT-<8 ký tự order>-<seatId>` và chữ ký **HMAC-SHA256** bảo mật dựa trên bí mật hệ thống. Ngăn chặn tuyệt đối việc làm giả mã QR hoặc sửa đổi số ghế/suất diễn ngoài hệ thống.
+- **Nội dung email đầy đủ:** Tên sự kiện, địa điểm, thời gian biểu diễn, mã đơn hàng, tổng tiền, danh sách từng ghế, hạng vé và hình ảnh mã QR (Data URL PNG/SVG) có thể quét trực tiếp tại cửa kiểm soát.
+- **API truy vấn & gửi lại vé:**
+  - `GET /api/orders/:orderId/tickets` - Tra cứu danh sách vé kèm mã QR (yêu cầu đăng nhập, chỉ chủ đơn hàng hoặc Admin).
+  - `POST /api/orders/:orderId/send-ticket-email` - Gửi lại email vé điện tử cho người mua khi cần.
+- **Giao diện kết quả thanh toán (`/payment-result` & `/payment/return`):** Hiển thị trực quan trạng thái thanh toán, banner thông báo vé đã gửi qua email, danh sách vé và mã QR trên màn hình kèm nút bấm *"Gửi lại email vé"* tiện lợi.
+
+### 🧪 Kiểm thử tự động
+- `backend/tests/ticketEmailS27.test.js`: Kiểm thử toàn diện 13 test cases bao gồm tạo và xác thực chữ ký HMAC-SHA256, từ chối chữ ký giả/sai lệch, sinh mã QR, định dạng email HTML, phân quyền và xác thực API.
