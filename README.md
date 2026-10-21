@@ -33,6 +33,12 @@
 
 ---
 
+## Quy trình nhánh của nhóm
+
+Nhóm dùng GitHub Flow: tạo `feature/*` từ `main` mới nhất, mở PR vào `main`,
+chờ CI đạt và một đồng đội duyệt rồi merge. Các nhánh sửa lỗi và tài liệu cũng mở PR vào `main`.
+Xem [hướng dẫn làm việc với main và nhánh tính năng](docs/GITHUB_FLOW.md).
+
 ## 🛠️ 2. Công nghệ sử dụng (Tech Stack)
 
 | Phân hệ | Công nghệ | Chi tiết |
@@ -579,6 +585,30 @@ adapters must be connected before these new endpoints are available on staging.
     - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
     - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
     - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+
+---
+
+## 🔐 13. S-21: Webhook có chữ ký sai bị từ chối (SCRUM-212 / T-48, T-49)
+
+> **Story:** `[S-21]` Webhook có chữ ký sai bị từ chối  
+> **Epic:** `[E-05]` Payments & Orders  
+> **Phân loại:** MoSCoW-Must | Sprint-3 | Tier-Ready  
+
+### 📌 Chi tiết các Sub-tasks
+
+* **[T-48] Kiểm chữ ký webhook trước khi đọc nội dung (SCRUM-213):**
+  - `POST /api/payments/webhook` nhận **bytes thô** qua `express.raw` mount trước `express.json()`; không middleware nào parse JSON của webhook.
+  - Adapter của cổng đang dùng (MoMo, hoặc cổng giả lập khi có T-44) kiểm chữ ký trên đúng các bytes đó (`paymentResultService.verifyWebhook`, T-42). Sai hoặc thiếu chữ ký → `401`, trước khi ghi biên nhận (T-45/T-46) hay đụng tới đơn hàng.
+  - Không có khoá mặc định: khoá lấy từ cấu hình cổng (`MOMO_SECRET_KEY`); thiếu cấu hình thì mọi webhook bị từ chối.
+* **[T-49] Ghi log lần từ chối kèm địa chỉ nguồn (SCRUM-214):**
+  - Mỗi lần từ chối ghi **đúng một** dòng `audit_logs` (và `logs/audit.log`) qua `auditAccessDenials`: method, endpoint, `401`, lý do `Chữ ký webhook không hợp lệ`, IP nguồn.
+  - IP nguồn là `req.ip`. Chỉ khi đặt `TRUST_PROXY` (docker-compose đặt `1` vì backend chạy sau Nginx) Express mới đọc `X-Forwarded-For`; chạy trực tiếp thì người gửi không tự khai IP được.
+
+### 🧪 Kiểm thử tự động
+- `backend/tests/webhookSignature.test.js`: chạy app thật với adapter MoMo, IPN ký bằng khoá thử. Gồm: thiếu chữ ký, chữ ký sai, sửa số tiền, body JSON hỏng (vẫn 401, chứng minh không qua bộ đọc JSON chung), không có khoá thì không giả mạo được bằng `mock-secret`, đúng một dòng log kèm IP, không tin `X-Forwarded-For` khi chưa bật `TRUST_PROXY` và tin đúng 1 lớp khi bật.
+- Đường xử lý webhook hợp lệ (biên nhận, chống trùng, cập nhật đơn) do `webhookReplay.integration.test.js` (T-47) kiểm trên DB thật.
+
+---
 
 # T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
 
