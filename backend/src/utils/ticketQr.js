@@ -58,8 +58,10 @@ const verifyTicketCode = (code, env = process.env) => {
   if (!TICKET_ID_PATTERN.test(ticketId) || !SIGNATURE_PATTERN.test(signature)) {
     return { valid: false, reason: 'MALFORMED' };
   }
-  const expected = Buffer.from(signatureFor(ticketId, env), 'base64url');
-  const actual = Buffer.from(signature, 'base64url');
+  // So sánh nguyên chuỗi base64url: ký tự cuối có 2 bit đệm, nên giải mã ra bytes rồi so sẽ chấp nhận
+  // nhiều cách viết khác nhau của cùng một chữ ký. Chỉ đúng một chuỗi QR hợp lệ cho mỗi vé.
+  const expected = Buffer.from(signatureFor(ticketId, env));
+  const actual = Buffer.from(signature);
   if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
     return { valid: false, reason: 'BAD_SIGNATURE' };
   }
