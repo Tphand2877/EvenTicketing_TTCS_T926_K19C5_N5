@@ -75,6 +75,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      RUN_TICKET_ADMISSION_DB_TESTS: '1'
+      TICKET_ADMISSION_DB_NAME_TEST: eventticketing_s31_test
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: eventticketing
@@ -162,7 +164,25 @@ jobs:
 
       - name: Run backend tests
         working-directory: backend
-        run: npm test
+        run: |
+          node <<'NODE'
+          const { Client } = require('pg');
+          (async () => {
+            if (process.env.TICKET_ADMISSION_DB_NAME_TEST !== 'eventticketing_s31_test') {
+              throw new Error('Unexpected S-31 test database name.');
+            }
+            const client = new Client({
+              host: process.env.DB_HOST, port: Number(process.env.DB_PORT),
+              database: process.env.DB_NAME, user: process.env.DB_USER,
+              password: process.env.DB_PASSWORD,
+            });
+            try {
+              await client.connect();
+              await client.query('CREATE DATABASE eventticketing_s31_test');
+            } finally { await client.end(); }
+          })().catch(() => { console.error('Could not prepare S-31 test database.'); process.exitCode = 1; });
+          NODE
+          npm test
 
 
   # =========================
