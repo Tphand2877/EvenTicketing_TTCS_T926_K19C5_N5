@@ -14,19 +14,23 @@ const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
 const createApp = ({ paymentService, paymentResultService, paymentGateway, paymentProvider } = {}) => {
 const app = express();
+// T-49: chỉ tin X-Forwarded-For khi chạy sau proxy đã biết (Nginx trong docker-compose đặt TRUST_PROXY=1).
+// Không đặt thì req.ip là địa chỉ kết nối thật, người gửi không tự khai IP được.
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 
 // ─── Middleware cơ bản ───────────────────────────────────────────────────────
 app.use(cors());
+
+// ─── SCRUM-212 [S-21 / T-48]: webhook thanh toán ───────────────────────────────
+// Giữ nguyên bytes thô, KHÔNG qua bộ đọc JSON chung: adapter của cổng (T-40/T-42) kiểm
+// chữ ký trên đúng các bytes này trước khi bất kỳ nội dung nào được dùng.
+app.use('/api/payments/webhook', express.raw({ type: () => true, limit: '64kb' }), (req, _res, next) => {
+  if (Buffer.isBuffer(req.body)) req.rawBody = req.body;
+  next();
+});
+
 // 5mb: giới hạn kích thước tệp sơ đồ ghế tối đa 5 MB (S-06 NFR)
-app.use(express.json({
-  limit: '5mb',
-  verify(req, _res, buffer) {
-    // S-20's webhook route needs the exact signed bytes after this shared parser runs.
-    if (req.path.startsWith('/api/payments/') && /\/webhooks?\/?$/.test(req.path)) {
-      req.rawBody = Buffer.from(buffer);
-    }
-  },
-}));
+app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ─── SCRUM-72 T-10: Audit logging cho mọi request bị từ chối (401/403) ────────
