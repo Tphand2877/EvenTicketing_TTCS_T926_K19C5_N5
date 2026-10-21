@@ -90,6 +90,7 @@ describeDatabase('S-05: nạp sơ đồ ghế trên PostgreSQL', () => {
 
   beforeEach(async () => {
     await mockDatabase('seat_holds').del();
+    await mockDatabase('tickets').del();
     await mockDatabase('order_items').del();
     await mockDatabase('orders').del();
     await mockDatabase('seats').del();

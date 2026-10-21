@@ -615,3 +615,29 @@ Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T
 `pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
 `ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
 Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
+
+---
+
+## 🎫 14. S-25 / S-26: Vé điện tử có mã QR được ký
+
+**Phát vé (S-25).** Khi webhook thanh toán chuyển đơn sang `paid` (T-42), mỗi ghế chưa nhả của đơn được phát một vé trong bảng `tickets`, **trong cùng transaction** với trạng thái `paid`:
+- `order_item_id` là unique, nên webhook gửi lại bao nhiêu lần cũng chỉ có một vé cho mỗi ghế.
+- Nếu không phát đủ vé thì cả thanh toán rollback, đơn vẫn `pending` và cổng thanh toán sẽ gửi lại.
+- Migration tự phát vé cho các đơn đã `paid` từ trước khi có bảng vé.
+
+**QR có chữ ký (S-26).** Nội dung QR là `ET1.<mã vé>.<chữ ký>`:
+- Chữ ký là HMAC-SHA256 bằng `TICKET_QR_SECRET`, khoá chỉ có ở backend. Nếu chưa đặt biến này thì dùng khoá dẫn xuất từ `JWT_SECRET`; không có khoá mặc định viết sẵn trong code.
+- Sửa mã vé, sửa chữ ký hay tự ký bằng khoá khác đều bị từ chối.
+- QR không chứa thông tin cá nhân hay giá vé.
+- Hàm `verifyTicketCode` trong `backend/src/utils/ticketQr.js` chỉ trả mã vé khi chữ ký đúng. Bước soát vé (S-30) dùng hàm này.
+
+| API | Quyền | Mô tả |
+| --- | --- | --- |
+| `GET /api/tickets` | Đã đăng nhập | Tất cả vé của tôi, kèm `qrCode` và ảnh `qrImage` |
+| `GET /api/tickets/orders/:orderId` | Chủ đơn | Vé của một đơn. Lỗi: `409 ORDER_NOT_PAID` nếu đơn chưa thanh toán, `403` nếu đơn của người khác |
+
+**Giao diện.** Trang `/my-tickets` ("Vé của tôi" trên thanh điều hướng) hiển thị từng vé: sự kiện, suất, ghế, hạng, giá và QR. Thêm `?orderId=<id>` để chỉ xem vé của một đơn.
+
+**Kiểm thử.**
+- `tests/ticketQr.test.js`: 13 ca giả mạo/sai định dạng.
+- `tests/ticketIssuance.integration.test.js` (`RUN_TICKET_DB_TESTS=1`): chạy webhook MoMo ký thật trên PostgreSQL, rồi kiểm phát vé, idempotent, quyền xem và rollback khi không phát đủ vé.

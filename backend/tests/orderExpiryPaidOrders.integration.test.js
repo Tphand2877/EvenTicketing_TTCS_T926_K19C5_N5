@@ -83,6 +83,7 @@ const snapshot = async (orderId) => ({
   items: await database('order_items').where({ order_id: orderId }).orderBy('seat_id'),
   holds: await database('seat_holds').where({ order_id: orderId }).orderBy('id'),
   receipts: await database('payment_events').where({ order_id: orderId }).orderBy('id'),
+  tickets: await database('tickets').where({ order_id: orderId }).orderBy('id'), // S-25
 });
 const liveSeats = (orderId) => database('order_items').where({ order_id: orderId }).whereNull('released_at').orderBy('seat_id').pluck('seat_id');
 
@@ -94,6 +95,7 @@ const payThenPassDeadline = async () => {
   const paid = await snapshot(PAID);
   expect(paid.order).toMatchObject({ status: 'paid', gateway_transaction_id: '5300000001' });
   expect(paid.holds).toHaveLength(0);
+  expect(paid.tickets).toHaveLength(SEATS[PAID].length);
   return paid;
 };
 
@@ -110,7 +112,7 @@ describeDatabase('T-53: job nhả đơn quá hạn không đụng tới đơn đ
   }, 30000);
 
   beforeEach(async () => {
-    for (const table of ['payment_events', 'seat_holds', 'order_items', 'orders']) await database(table).del();
+    for (const table of ['tickets', 'payment_events', 'seat_holds', 'order_items', 'orders']) await database(table).del();
   });
 
   afterAll(async () => {

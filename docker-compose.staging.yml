@@ -50,6 +50,8 @@ services:
       MOMO_API_BASE_URL: ${MOMO_API_BASE_URL:-https://test-payment.momo.vn}
       MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-}
       MOMO_IPN_URL: ${MOMO_IPN_URL:-}
+      # S-26: khoá ký QR trên vé (>= 32 ký tự). Để trống thì dẫn xuất từ JWT_SECRET.
+      TICKET_QR_SECRET: ${TICKET_QR_SECRET:-}
 
     ports:
       - "3000:3000"
