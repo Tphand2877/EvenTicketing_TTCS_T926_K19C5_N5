@@ -159,6 +159,11 @@ const createPaymentResultService = ({
       gatewayTransactionId: verifiedResult.gatewayTransactionId,
     });
     await repository.deletePaymentHold(context.transaction, { hold });
+    // S-25: vé được phát cùng commit với trạng thái paid; thiếu vé thì rollback cả thanh toán.
+    const issued = await repository.issueTickets(context.transaction, { orderId: order.id });
+    if (issued !== allocations.length) {
+      throw new PaymentResultError('TICKET_ISSUE_FAILED', 'Could not issue one ticket per paid seat.');
+    }
 
     return {
       status: 'paid',

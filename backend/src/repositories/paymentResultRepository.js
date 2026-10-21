@@ -79,6 +79,24 @@ const createPaymentResultRepository = (database = db) => ({
     if (rows.length !== 1) throw new PaymentResultPersistenceError('Could not record the gateway payment result.');
   },
 
+  /**
+   * S-25: phát một vé cho mỗi ghế chưa nhả của đơn vừa thanh toán, trong cùng transaction với
+   * markPaid. order_item_id là unique nên chạy lại cũng không sinh thêm vé.
+   */
+  async issueTickets(transaction, { orderId }) {
+    const { rows } = await transaction.raw(`
+      INSERT INTO tickets (id, order_id, order_item_id, seat_id, showtime_id, user_id)
+      SELECT gen_random_uuid(), ord.id, item.id, item.seat_id, seat.showtime_id, ord.user_id
+      FROM order_items item
+      JOIN orders ord ON ord.id = item.order_id
+      JOIN seats seat ON seat.id = item.seat_id
+      WHERE item.order_id = ? AND item.released_at IS NULL AND ord.status = 'paid'
+      ON CONFLICT (order_item_id) DO NOTHING
+      RETURNING id
+    `, [orderId]);
+    return rows.length;
+  },
+
   async deletePaymentHold(transaction, { hold }) {
     const deleted = await transaction('seat_holds')
       .where({

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { SEATS_PER_ROW, rowLabel } from './seatUtils'
-import StageDesign from './StageDesign'
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.2
@@ -25,7 +24,6 @@ export default function SeatMapCanvas({
   onChange,
   disabled = false,
   onRefresh,
-  event,
 }) {
   const [zoom, setZoom] = useState(1.0)
 
@@ -176,8 +174,11 @@ export default function SeatMapCanvas({
         </div>
       </div>
 
-      {/* Sơ đồ thiết kế sân khấu riêng cho từng sự kiện */}
-      <StageDesign event={event} />
+      {/* Sân khấu */}
+      <div className="text-center text-[10px] font-semibold tracking-widest text-gray-400 uppercase select-none">
+        <div className="mx-auto mb-1.5 h-2 w-2/3 max-w-md rounded-full bg-gradient-to-r from-violet-500 via-pink-500 to-amber-400 shadow-sm" />
+        Sân khấu
+      </div>
 
       {/* Vùng sơ đồ ghế cuộn được với zoom transform (AC5, AC1) */}
       <div

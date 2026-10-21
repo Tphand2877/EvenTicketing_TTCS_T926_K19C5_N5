@@ -1,6 +1,5 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { formatDateTime, formatPrice, getCategoryStyle, getEventImage } from './eventFormat'
+import { formatDateTime, formatPrice, getCategoryStyle } from './eventFormat'
 
 /**
  * Thẻ sự kiện trong danh sách (SCRUM-80)
@@ -8,31 +7,18 @@ import { formatDateTime, formatPrice, getCategoryStyle, getEventImage } from './
  */
 export default function EventCard({ event }) {
   const { color, emoji } = getCategoryStyle(event.category)
-  const imageUrl = getEventImage(event)
-  const [imgError, setImgError] = useState(false)
 
   return (
     <Link
       to={`/events/${event.id}`}
-      className="group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 flex flex-col"
+      className="group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1"
     >
       {/* Thumbnail */}
       <div className={`h-48 bg-gradient-to-br ${color} relative flex items-center justify-center overflow-hidden`}>
-        {!imgError && imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={event.title}
-            onError={() => setImgError(true)}
-            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-            loading="lazy"
-          />
-        ) : (
-          <span className="text-6xl select-none">{emoji}</span>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
-        <span className="absolute top-3 left-3 text-xs font-semibold text-white bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 shadow-sm">
-          {event.category}
-        </span>
+        {event.image_url
+          ? <img src={event.image_url} alt={event.title} className="absolute inset-0 w-full h-full object-cover" />
+          : <span className="text-6xl">{emoji}</span>}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
       </div>
 
       {/* Info */}

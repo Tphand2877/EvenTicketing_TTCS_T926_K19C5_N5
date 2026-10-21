@@ -7,7 +7,7 @@ const protectedRoutes = require('./routes/protectedRoutes');
 const { eventRouter, showtimeRouter } = require('./routes/eventRoutes');
 const { paymentRouter } = require('./routes/paymentRoutes');
 const { paymentWebhookRouter } = require('./routes/paymentWebhookRoutes');
-const orderTicketRoutes = require('./routes/orderTicketRoutes');
+const { ticketRouter } = require('./routes/ticketRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
@@ -41,8 +41,7 @@ app.use('/api/events', eventRouter);       // SCRUM-80
 app.use('/api/showtimes', showtimeRouter); // SCRUM-80, SCRUM-84
 app.use('/api/payments', paymentRouter);   // S-18 / T-41
 app.use('/api/payments', paymentWebhookRouter); // T-46 delegates verification/settlement to T-42
-app.use('/api/orders', orderTicketRoutes); // SCRUM-223 / S-27
-app.use('/api/payments/orders', orderTicketRoutes);
+app.use('/api/tickets', ticketRouter);     // S-25 / S-26
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────

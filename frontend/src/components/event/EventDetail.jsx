@@ -7,7 +7,7 @@ import SeatLegend from '../seatmap/SeatLegend'
 import SeatMapCanvas from '../seatmap/SeatMapCanvas'
 import { seatName } from '../seatmap/seatUtils'
 import ShowtimeList from './ShowtimeList'
-import { formatDateTime, formatPrice, getCategoryStyle, getErrorMessage, getEventImage } from './eventFormat'
+import { formatDateTime, formatPrice, getCategoryStyle, getErrorMessage } from './eventFormat'
 
 const MAX_TICKETS = 10
 const FALLBACK_SEAT_MAP_MAX_CAPACITY = 300
@@ -187,16 +187,10 @@ export default function EventDetail({ event, showtimes }) {
     <>
       {/* Hero */}
       <div className={`h-72 bg-gradient-to-br ${color} flex items-center justify-center text-white relative overflow-hidden`}>
-        {getEventImage(event) ? (
-          <img
-            src={getEventImage(event)}
-            alt={event.title}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        ) : (
-          <span className="text-8xl select-none">{emoji}</span>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/20" />
+        {event.image_url
+          ? <img src={event.image_url} alt={event.title} className="absolute inset-0 w-full h-full object-cover" />
+          : <span className="text-8xl">{emoji}</span>}
+        <div className="absolute inset-0 bg-black/20" />
       </div>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -274,7 +268,6 @@ export default function EventDetail({ event, showtimes }) {
                     </div>
 
                     <SeatMapCanvas
-                      event={event}
                       seats={seatMap}
                       selected={seats}
                       maxSelect={maxQuantity}
@@ -296,7 +289,6 @@ export default function EventDetail({ event, showtimes }) {
                       <SeatLegend />
                     </div>
                     <SeatMapCanvas
-                      event={event}
                       capacity={availability.capacity}
                       takenCount={availability.capacity - availability.available}
                       selected={seats}

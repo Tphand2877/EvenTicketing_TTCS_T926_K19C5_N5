@@ -1,143 +1,58 @@
 const QRCode = require('qrcode');
-const db = require('../config/database');
-const { signTicketPayload } = require('../utils/ticketSignature');
+const { createTicketModel } = require('../models/Ticket');
+const { signTicketCode } = require('../utils/ticketQr');
 
-/**
- * SCRUM-223 [S-27] - Ticket Service
- * Truy vấn thông tin vé của đơn hàng, sinh mã định danh và QR code có chữ ký
- */
+const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * Sinh mã vé chuẩn (canonical ticket ID)
- */
-const generateTicketId = (orderId, seatId) => {
-  const shortOrder = (orderId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
-  return `TKT-${shortOrder}-${seatId}`;
-};
+class TicketServiceError extends Error {
+  constructor(code, status, details) {
+    super(code);
+    this.name = 'TicketServiceError';
+    this.code = code;
+    this.status = status;
+    if (details) this.details = details;
+  }
+}
 
-/**
- * Sinh chuỗi QR có chữ ký bảo mật và tạo ảnh Data URL
- */
-const generateTicketQrCode = async ({ ticketId, orderId, showtimeId, seatId, seatLabel, categoryName }) => {
-  const sig = signTicketPayload({ ticketId, orderId, showtimeId, seatId, seatLabel });
-  const qrPayload = JSON.stringify({
-    t: ticketId,
-    o: orderId,
-    s: showtimeId,
-    seat: seatLabel,
-    cat: categoryName,
-    sig,
-  });
+/** Ảnh QR (data URL PNG) cho nội dung đã ký. Dùng chung cho trang vé (S-25) và email (S-27). */
+const renderQrDataUrl = (code) => QRCode.toDataURL(code, { errorCorrectionLevel: 'M', margin: 2, width: 240 });
 
-  const [qrCodeDataUrl, qrCodeSvg] = await Promise.all([
-    QRCode.toDataURL(qrPayload, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 200,
-      color: { dark: '#111827', light: '#FFFFFF' },
-    }),
-    QRCode.toString(qrPayload, {
-      type: 'svg',
-      errorCorrectionLevel: 'M',
-      margin: 1,
-    }),
-  ]);
+const createTicketService = ({ model = createTicketModel(), env = process.env } = {}) => {
+  const present = async (ticket) => {
+    const qrCode = signTicketCode(ticket.id, env);
+    return {
+      id: ticket.id,
+      code: ticket.id.slice(0, 8).toUpperCase(),
+      status: ticket.status,
+      issuedAt: ticket.issuedAt,
+      orderId: ticket.orderId,
+      seat: { id: ticket.seatId, label: `${ticket.rowLabel}${ticket.seatNumber}`, row: ticket.rowLabel, number: ticket.seatNumber },
+      category: ticket.categoryName,
+      price: ticket.unitPrice,
+      currency: ticket.currency,
+      showtime: { id: ticket.showtimeId, startsAt: ticket.startsAt },
+      event: { id: ticket.eventId, title: ticket.eventTitle, venue: ticket.venue },
+      qrCode,
+      qrImage: await renderQrDataUrl(qrCode),
+    };
+  };
+  // Chỉ vé của đơn đã thanh toán được hiển thị
+  const presentAll = (tickets) => Promise.all(tickets.filter((t) => t.orderStatus === 'paid').map(present));
 
   return {
-    qrPayload,
-    signature: sig,
-    qrCodeDataUrl,
-    qrCodeSvg,
+    async listMyTickets({ userId }) {
+      return presentAll(await model.findByUser(userId));
+    },
+
+    async getOrderTickets({ orderId, userId }) {
+      if (!ORDER_ID_PATTERN.test(orderId || '')) throw new TicketServiceError('INVALID_ORDER_ID', 400);
+      const order = await model.findOrder(orderId);
+      if (!order) throw new TicketServiceError('ORDER_NOT_FOUND', 404);
+      if (order.user_id !== userId) throw new TicketServiceError('ORDER_FORBIDDEN', 403);
+      if (order.status !== 'paid') throw new TicketServiceError('ORDER_NOT_PAID', 409, { status: order.status });
+      return presentAll(await model.findByOrder(orderId));
+    },
   };
 };
 
-/**
- * Lấy danh sách vé hoàn chỉnh (kèm QR code) của một đơn hàng
- * @param {string} orderId
- * @param {Object} [trx] - Knex transaction (tùy chọn)
- */
-const getOrderTickets = async (orderId, trx = db) => {
-  const rows = await trx('order_items as item')
-    .join('orders as ord', 'ord.id', 'item.order_id')
-    .join('seats as st', 'st.id', 'item.seat_id')
-    .join('showtimes as sht', 'sht.id', 'st.showtime_id')
-    .join('events as evt', 'evt.id', 'sht.event_id')
-    .select(
-      'ord.id as orderId',
-      'ord.status as orderStatus',
-      'ord.user_id as userId',
-      'ord.total_amount as totalAmount',
-      'ord.currency',
-      'ord.created_at as orderCreatedAt',
-      'item.id as orderItemId',
-      'item.seat_id as seatId',
-      'item.category_name as categoryName',
-      'item.unit_price as unitPrice',
-      'st.row_label as rowLabel',
-      'st.seat_number as seatNumber',
-      'sht.id as showtimeId',
-      'sht.starts_at as startsAt',
-      'sht.ends_at as endsAt',
-      'evt.id as eventId',
-      'evt.title as eventTitle',
-      'evt.venue as eventVenue',
-      'evt.category as eventCategory',
-      'evt.image_url as eventImageUrl',
-    )
-    .where('item.order_id', orderId)
-    .whereNull('item.released_at')
-    .orderBy(['st.row_label', 'st.seat_number']);
-
-  if (!rows || rows.length === 0) {
-    return [];
-  }
-
-  const tickets = await Promise.all(
-    rows.map(async (row) => {
-      const seatLabel = `${row.rowLabel}${row.seatNumber}`;
-      const ticketId = generateTicketId(row.orderId, row.seatId);
-      const { qrPayload, signature, qrCodeDataUrl, qrCodeSvg } = await generateTicketQrCode({
-        ticketId,
-        orderId: row.orderId,
-        showtimeId: row.showtimeId,
-        seatId: row.seatId,
-        seatLabel,
-        categoryName: row.categoryName,
-        startsAt: row.startsAt,
-        venue: row.eventVenue,
-      });
-
-      return {
-        ticketId,
-        orderId: row.orderId,
-        orderItemId: row.orderItemId,
-        seatId: row.seatId,
-        seatLabel,
-        rowLabel: row.rowLabel,
-        seatNumber: row.seatNumber,
-        categoryName: row.categoryName,
-        unitPrice: row.unitPrice,
-        showtimeId: row.showtimeId,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-        eventId: row.eventId,
-        eventTitle: row.eventTitle,
-        eventVenue: row.eventVenue,
-        eventCategory: row.eventCategory,
-        eventImageUrl: row.eventImageUrl,
-        signature,
-        qrPayload,
-        qrCodeDataUrl,
-        qrCodeSvg,
-      };
-    }),
-  );
-
-  return tickets;
-};
-
-module.exports = {
-  generateTicketId,
-  generateTicketQrCode,
-  getOrderTickets,
-};
+module.exports = { TicketServiceError, createTicketService, renderQrDataUrl };

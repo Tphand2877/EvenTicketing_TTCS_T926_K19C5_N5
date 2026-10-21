@@ -1,17 +1,15 @@
 import apiClient from './apiClient'
 
-/**
- * SCRUM-223 [S-27] - Ticket Service Frontend
- * Lấy danh sách vé điện tử kèm mã QR và yêu cầu gửi lại email vé
- */
+// S-25: vé điện tử của người mua, mỗi vé kèm QR có chữ ký (S-26) do server tạo
 
-export const getOrderTickets = async (orderId) => {
-  const { data } = await apiClient.get(`/orders/${orderId}/tickets`)
-  return data?.data || data
+/** Tất cả vé của tài khoản đang đăng nhập */
+export const getMyTickets = async () => {
+  const { data } = await apiClient.get('/tickets')
+  return data.data.tickets
 }
 
-export const resendTicketEmail = async (orderId, email = null) => {
-  const payload = email ? { email } : {}
-  const { data } = await apiClient.post(`/orders/${orderId}/send-ticket-email`, payload)
-  return data
+/** Vé của một đơn đã thanh toán (409 ORDER_NOT_PAID nếu đơn chưa thanh toán) */
+export const getOrderTickets = async (orderId) => {
+  const { data } = await apiClient.get(`/tickets/orders/${encodeURIComponent(orderId)}`)
+  return data.data.tickets
 }
