@@ -11,6 +11,7 @@ const migrations = [
   require('../src/migrations/009_create_orders_and_order_items'),
   require('../src/migrations/010_add_payment_request_recovery'),
   require('../src/migrations/011_add_payment_result_state'),
+  require('../src/migrations/202610210101_create_tickets'),
 ];
 const { createPaymentResultRepository } = require('../src/repositories/paymentResultRepository');
 const { createPaymentResultService } = require('../src/services/paymentResultService');
