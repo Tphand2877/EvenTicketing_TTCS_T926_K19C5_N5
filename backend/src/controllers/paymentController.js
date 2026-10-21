@@ -118,7 +118,9 @@ const createOrderController = ({ orders = require('../models/Order') } = {}) => 
     // Lỗi nghiệp vụ của createOrderFromHold: mã lỗi -> HTTP status
     const status = ORDER_ERROR_STATUS[error.code];
     if (status) {
-      return res.status(status).json({ success: false, code: error.code, message: error.message });
+      const body = { success: false, code: error.code, message: error.message };
+      if (error.details) body.details = error.details;
+      return res.status(status).json(body);
     }
     return next(error);
   }
