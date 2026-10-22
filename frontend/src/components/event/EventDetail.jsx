@@ -49,6 +49,8 @@ export default function EventDetail({ event, showtimes }) {
   const [busy, setBusy] = useState(false)
   const [mapError, setMapError] = useState(null)
   const [message, setMessage] = useState(null)
+  const [showStageMap, setShowStageMap] = useState(true)
+  const [zoomStageMap, setZoomStageMap] = useState(false)
   const mapRequestId = useRef(0)
 
   const selectedShowtime = showtimes.find((showtime) => showtime.id === selectedId)
@@ -233,7 +235,133 @@ export default function EventDetail({ event, showtimes }) {
             )}
 
             {selectedShowtime && (
-              <section className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <>
+                {/* Sơ đồ khán đài sân khấu tổng quan (do Organizer thêm hoặc mặc định) */}
+                {(event.stage_map_url || seatMap?.stage_map_url || true) && (
+                  <div className="rounded-2xl border border-pink-100 bg-gradient-to-br from-pink-50/50 via-white to-purple-50/30 p-4 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-pink-600 font-bold text-sm sm:text-base">🏟️ Sơ đồ khán đài sân khấu</span>
+                        <span className="text-[11px] text-gray-500 hidden sm:inline">(Đối chiếu vị trí khán đài, sân khấu & cổng vào)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setZoomStageMap(true)}
+                          className="text-xs text-pink-600 hover:text-pink-700 font-semibold flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-lg border border-pink-200 shadow-xs active:scale-95 transition-all"
+                        >
+                          <span>🔍</span>
+                          <span>Phóng to</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowStageMap((v) => !v)}
+                          className="text-xs text-gray-600 hover:text-gray-900 font-medium bg-white px-2.5 py-1.5 rounded-lg border border-gray-200 active:scale-95 transition-all"
+                        >
+                          {showStageMap ? 'Thu gọn ▲' : 'Xem ảnh sơ đồ ▼'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {showStageMap && (
+                      <>
+                        <div
+                          className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-900 cursor-zoom-in max-h-[380px] flex items-center justify-center group"
+                          onClick={() => setZoomStageMap(true)}
+                          title="Bấm để phóng to sơ đồ khán đài"
+                        >
+                          <img
+                            src={event.stage_map_url || seatMap?.stage_map_url || '/images/sample-stage-map.png'}
+                            alt="Sơ đồ khán đài sân khấu"
+                            onError={(e) => {
+                              if (!e.target.src.endsWith('/images/sample-stage-map.png')) {
+                                e.target.src = '/images/sample-stage-map.png';
+                              }
+                            }}
+                            className="w-full h-auto max-h-[380px] object-contain transition-transform duration-300 group-hover:scale-102"
+                          />
+                          <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[11px] px-2.5 py-1 rounded-md backdrop-blur-sm pointer-events-none">
+                            🔍 Bấm vào ảnh để phóng to
+                          </div>
+                        </div>
+
+                        {/* Chú thích từng phân khu ứng với ghế có thể đặt */}
+                        <div className="pt-2">
+                          <p className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                            <span>📌</span>
+                            <span>Chú thích phân khu ứng với các ghế có thể đặt bên dưới:</span>
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="p-3 rounded-xl bg-pink-50 border border-pink-200 text-xs space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-pink-900 flex items-center gap-1">
+                                  <span>⭐</span>
+                                  <span>Khu vực VIP (Cận sân khấu)</span>
+                                </span>
+                                <span className="font-bold text-pink-600">500.000đ</span>
+                              </div>
+                              <p className="text-pink-800">
+                                Ghế trên sơ đồ: <strong>Hàng A &amp; Hàng B</strong> (A1 - A20, B1 - B20)
+                              </p>
+                              <p className="text-[11px] text-pink-600">
+                                Vị trí chính diện sân khấu &bull; Lối vào Cổng 1 (Ưu tiên)
+                              </p>
+                            </div>
+
+                            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-xs space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-sky-900 flex items-center gap-1">
+                                  <span>🎫</span>
+                                  <span>Khu vực Khán đài Tiêu chuẩn</span>
+                                </span>
+                                <span className="font-bold text-sky-600">300.000đ</span>
+                              </div>
+                              <p className="text-sky-800">
+                                Ghế trên sơ đồ: <strong>Hàng C đến Hàng O</strong> (C1 đến O20)
+                              </p>
+                              <p className="text-[11px] text-sky-600">
+                                Tầm nhìn bao quát toàn bộ sự kiện &bull; Lối vào Cổng 1 &amp; Cổng 2
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Modal phóng to toàn màn hình sơ đồ khán đài */}
+                {zoomStageMap && (
+                  <div
+                    className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+                    onClick={() => setZoomStageMap(false)}
+                  >
+                    <div className="relative max-w-5xl w-full max-h-[92vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-full flex items-center justify-between text-white pb-2 px-2">
+                        <span className="font-bold text-sm sm:text-base">Sơ đồ khán đài sân khấu (Toàn cảnh)</span>
+                        <button
+                          type="button"
+                          onClick={() => setZoomStageMap(false)}
+                          className="text-white hover:text-pink-400 text-lg font-bold bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <img
+                        src={event.stage_map_url || seatMap?.stage_map_url || '/images/sample-stage-map.png'}
+                        alt="Sơ đồ khán đài sân khấu phóng to"
+                        onError={(e) => {
+                          if (!e.target.src.endsWith('/images/sample-stage-map.png')) {
+                            e.target.src = '/images/sample-stage-map.png';
+                          }
+                        }}
+                        className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl bg-black"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <section className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold text-gray-900">Chọn ghế</h2>
                   <span className="text-xs text-gray-500">
@@ -289,6 +417,7 @@ export default function EventDetail({ event, showtimes }) {
                   </>
                 )}
               </section>
+              </>
             )}
           </div>
 

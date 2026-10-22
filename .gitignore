@@ -7,3 +7,5 @@ coverage/
 .DS_Store
 dist/
 build/
+*.exe
+cloudflared.exe

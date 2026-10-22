@@ -29,7 +29,7 @@ const encodeCursor = (row) => Buffer.from(JSON.stringify({ v: 1, startsAt: row.c
 const isoTime = (value) => value instanceof Date ? value.toISOString() : value;
 const publicShowtime = (row) => ({
   id: row.id, event_id: row.event_id, title: row.title, description: row.description,
-  category: row.category, venue: row.venue, image_url: row.image_url,
+  category: row.category, venue: row.venue, image_url: row.image_url, stage_map_url: row.stage_map_url,
   starts_at: isoTime(row.starts_at), ends_at: isoTime(row.ends_at), status: row.status,
   min_price: row.min_price == null ? null : Number(row.min_price),
   max_price: row.max_price == null ? null : Number(row.max_price),
@@ -59,7 +59,7 @@ const createPublicShowtimeService = ({ source = repository, pageCache = cache } 
     const row = await source.seatMap(id);
     if (!row) throw new PublicQueryError(404, 'Không tìm thấy suất diễn.');
     if (!row.on_sale) throw new PublicQueryError(409, 'Suất diễn không mở bán.');
-    return { showtime_id: row.showtime_id, seats: row.seats };
+    return { showtime_id: row.showtime_id, stage_map_url: row.stage_map_url, seats: row.seats };
   },
 });
 module.exports = { PublicQueryError, parsePage, createPublicShowtimeService, ...createPublicShowtimeService() };

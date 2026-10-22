@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="pitchGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#15803d"/>
+      <stop offset="100%" stop-color="#166534"/>
+    </linearGradient>
+    <linearGradient id="vipStand" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#fb7185"/>
+    </linearGradient>
+    <linearGradient id="stdStand" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1000" height="800" rx="20" fill="#0f172a"/>
+  <rect x="20" y="20" width="960" height="760" rx="16" fill="none" stroke="#334155" stroke-width="2"/>
+
+  <!-- Title -->
+  <text x="500" y="65" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="bold" letter-spacing="3" font-family="system-ui, sans-serif">
+    V.LEAGUE 2026 &#8226; SÂN VẬN ĐỘNG HÀNG ĐẪY
+  </text>
+  <text x="500" y="98" text-anchor="middle" fill="#ffffff" font-size="26" font-weight="900" letter-spacing="2" font-family="system-ui, sans-serif">
+    SƠ ĐỒ KHÁN ĐÀI &amp; SÂN VẬN ĐỘNG
+  </text>
+
+  <!-- SÂN CỎ BÓNG ĐÁ (FOOTBALL PITCH) -->
+  <g transform="translate(200, 130)">
+    <rect width="600" height="150" rx="8" fill="url(#pitchGrad)" stroke="#86efac" stroke-width="2"/>
+    <!-- Pitch markings -->
+    <line x1="300" y1="0" x2="300" y2="150" stroke="#ffffff" stroke-width="2" stroke-opacity="0.6"/>
+    <circle cx="300" cy="75" r="40" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.6"/>
+    <circle cx="300" cy="75" r="3" fill="#ffffff"/>
+    <rect x="0" y="35" width="70" height="80" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.6"/>
+    <rect x="530" y="35" width="70" height="80" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.6"/>
+    <text x="300" y="80" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="900" letter-spacing="3" font-family="system-ui, sans-serif" opacity="0.85">
+      SÂN CỎ THI ĐẤU CHÍNH (PITCH)
+    </text>
+  </g>
+
+  <!-- CỔNG VÀO SÂN -->
+  <g transform="translate(40, 260)">
+    <rect width="130" height="110" rx="12" fill="#1e293b" stroke="#f43f5e" stroke-width="2"/>
+    <text x="65" y="35" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="bold" font-family="system-ui, sans-serif">CỔNG VÀO 1</text>
+    <text x="65" y="60" text-anchor="middle" fill="#cbd5e1" font-size="11" font-family="system-ui, sans-serif">KHÁN ĐÀI A &amp; VIP</text>
+    <text x="65" y="85" text-anchor="middle" fill="#fb7185" font-size="11" font-weight="bold" font-family="system-ui, sans-serif">CỬA VIP ĐƯỜNG TRỊNH HOÀI ĐỨC</text>
+  </g>
+
+  <g transform="translate(830, 260)">
+    <rect width="130" height="110" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+    <text x="65" y="35" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="bold" font-family="system-ui, sans-serif">CỔNG VÀO 2</text>
+    <text x="65" y="60" text-anchor="middle" fill="#cbd5e1" font-size="11" font-family="system-ui, sans-serif">KHÁN ĐÀI TIÊU CHUẨN</text>
+    <text x="65" y="85" text-anchor="middle" fill="#38bdf8" font-size="11" font-weight="bold" font-family="system-ui, sans-serif">CỬA ĐƯỜNG NGUYỄN THÁI HỌC</text>
+  </g>
+
+  <!-- KHU VIP KHÁN ĐÀI A CÓ MÁI CHE (HÀNG A - B) -->
+  <g transform="translate(200, 310)">
+    <rect width="600" height="110" rx="14" fill="url(#vipStand)" opacity="0.95"/>
+    <text x="300" y="45" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="900" font-family="system-ui, sans-serif">
+      KHÁN ĐÀI A VIP - CÓ MÁI CHE (HÀNG A &amp; HÀNG B)
+    </text>
+    <text x="300" y="72" text-anchor="middle" fill="#fef08a" font-size="13" font-weight="bold" font-family="system-ui, sans-serif">
+      GHẾ ĐỆM CAO CẤP &#8226; TRỰC DIỆN CABIN BĂNG GHẾ HUẤN LUYỆN VIÊN
+    </text>
+    <text x="300" y="94" text-anchor="middle" fill="#ffffff" font-size="11" font-family="system-ui, sans-serif">
+      (Ghế tương ứng trên sơ đồ: Hàng A: A1 - A20, Hàng B: B1 - B20)
+    </text>
+  </g>
+
+  <!-- KHU TIÊU CHUẨN KHÁN ĐÀI A/B (HÀNG C - O) -->
+  <g transform="translate(180, 445)">
+    <rect width="640" height="190" rx="14" fill="url(#stdStand)" opacity="0.9"/>
+    <text x="320" y="55" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="900" font-family="system-ui, sans-serif">
+      KHÁN ĐÀI TIÊU CHUẨN (HÀNG C ĐẾN HÀNG O)
+    </text>
+    <text x="320" y="90" text-anchor="middle" fill="#bae6fd" font-size="13" font-weight="bold" font-family="system-ui, sans-serif">
+      KHÔNG GIAN CỔ VŨ CUỒNG NHIỆT &#8226; TẦM NHÌN BAO QUÁT TOÀN BỘ SÂN BÓNG
+    </text>
+    <text x="320" y="125" text-anchor="middle" fill="#ffffff" font-size="12" font-family="system-ui, sans-serif">
+      (Ghế tương ứng trên sơ đồ: Hàng C, D, E, F, G, H, I, J, K, L, M, N, O)
+    </text>
+  </g>
+
+  <!-- BẢNG CHÚ GIẢI -->
+  <g transform="translate(180, 660)">
+    <rect width="640" height="85" rx="14" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+    <rect x="25" y="22" width="22" height="22" rx="6" fill="#e11d48"/>
+    <text x="58" y="38" fill="#ffffff" font-size="14" font-weight="bold" font-family="system-ui, sans-serif">Khán đài A VIP (Hàng A - B)</text>
+    <text x="58" y="58" fill="#fca5a5" font-size="12" font-weight="bold" font-family="system-ui, sans-serif">500.000đ / vé &#8226; Đặt ghế phía dưới</text>
+
+    <rect x="340" y="22" width="22" height="22" rx="6" fill="#0284c7"/>
+    <text x="375" y="38" fill="#ffffff" font-size="14" font-weight="bold" font-family="system-ui, sans-serif">Khán đài Tiêu Chuẩn (Hàng C - O)</text>
+    <text x="375" y="58" fill="#7dd3fc" font-size="12" font-weight="bold" font-family="system-ui, sans-serif">300.000đ / vé &#8226; Đặt ghế phía dưới</text>
+  </g>
+</svg>
