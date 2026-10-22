@@ -10,7 +10,7 @@ exports.seed = async function (knex) {
   // Reset sequence (PostgreSQL)
   await knex.raw('ALTER SEQUENCE roles_id_seq RESTART WITH 1');
 
-  // Insert 3 roles mặc định
+  // Insert roles mặc định (staff, supervisor: S-28)
   await knex('roles').insert([
     {
       id: 1,
@@ -27,5 +27,16 @@ exports.seed = async function (knex) {
       name: 'buyer',
       description: 'Người mua - đặt vé và xem sự kiện',
     },
+    {
+      id: 4,
+      name: 'staff',
+      description: 'Nhân viên soát vé - quét QR tại cổng',
+    },
+    {
+      id: 5,
+      name: 'supervisor',
+      description: 'Trưởng ca soát vé - quét QR và cho vào có ghi chú',
+    },
   ]);
+  await knex.raw('ALTER SEQUENCE roles_id_seq RESTART WITH 6');
 };

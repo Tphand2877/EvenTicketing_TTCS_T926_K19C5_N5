@@ -1,5 +1,7 @@
 # EvenTicketing - Hệ thống Bán Vé Sự Kiện Trực Tuyến & Sơ Đồ Ghế
 
+> S-31 / Minh Quang: phần backend chống dùng lại vé và ghi nhận cho vào có ghi chú đang được triển khai; xem [phạm vi và hợp đồng tích hợp S-30](docs/S-31-ticket-admission.md).
+
 > **Dự án thực tập chuyên sâu:** `EvenTicketing_TTCS_T926_K19C5_N5`  
 > **Kiến trúc:** Monorepo (React 18 + Vite 5 Frontend | Express.js + Knex.js Backend | PostgreSQL 16 | Docker Compose)  
 > **Trạng thái kiểm thử:** 13/13 Test Suites Passed (75/75 Tests Passed, Coverage ~85%) | ESLint 0 Errors / 0 Warnings
@@ -301,11 +303,15 @@ npm run build
 - `GET /api/events/:id` - Lấy chi tiết thông tin sự kiện và các suất diễn liên quan.
 - `POST /api/events` - Tạo sự kiện mới (Yêu cầu quyền `organizer` hoặc `admin`).
 - `GET /api/showtimes/:id` - Lấy thông tin chi tiết suất diễn và trạng thái sơ đồ ghế.
+- `GET /api/showtimes/:id/seats` - Lấy sơ đồ ghế và trạng thái `available` / `held` / `sold`.
+- `GET /api/showtimes/:id/server-time` - Lấy giờ DB để tính độ lệch đồng hồ ở trang chọn ghế.
 - `POST /api/showtimes/:id/hold` - Giữ chỗ ghế ngồi tạm thời trong 10 phút (Yêu cầu đăng nhập).
 - `DELETE /api/showtimes/:id/hold` - Hủy giữ chỗ ghế ngồi.
+- `POST /api/showtimes/:id/seat-holds` - Giữ danh sách mã ghế trong một giao dịch (Yêu cầu đăng nhập).
+- `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId` - Bỏ một ghế khỏi lượt giữ.
 - `PUT /api/showtimes/:id/seat-map` - Nạp/thay sơ đồ ghế từ tệp JSON (organizer sở hữu sự kiện hoặc `admin`, xem mục 9).
 - `GET /api/events/:id/showtimes` - Organizer/admin xem mọi suất của sự kiện (kể cả nháp) kèm số ghế (xem mục 10).
-- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 10).
+- `POST /api/showtimes/:id/open-sales`, `POST /api/showtimes/:id/close-sales` - Mở bán / đóng bán suất diễn (xem mục 11).
 - `GET /api/showtimes/:id/status-log` - Nhật ký đổi trạng thái mở bán kèm người thao tác.
 
 ### Hệ thống
@@ -394,6 +400,28 @@ chạy bốn AC trên staging và kiểm tra kết quả quét phụ thuộc. K�
 không thay cho nghiệm thu staging hoặc thử nghiệm bán vé của E-05.
 
 ## S-18 / T-40: MoMo payment gateway adapter
+
+### T-44 provider selection (integration branch)
+
+Set `DEPLOY_ENV=development|test|staging|production` on the backend. `NODE_ENV`
+controls Node behavior and does not select the deployment: staging may use
+`NODE_ENV=production`. `PAYMENT_PROVIDER` is the only gateway selector. Leave it
+unset for the staging Mock default, set `momo` for MoMo, or set `mock` in a
+non-production deployment. The legacy `PAYMENT_GATEWAY` setting is rejected.
+
+Mock requires a backend-only `MOCK_PAYMENT_WEBHOOK_SECRET` of at least 32 bytes
+and `MOCK_PAYMENT_PUBLIC_ORIGIN`. Use an HTTPS origin on staging; HTTP is accepted
+only for localhost in development/test. The server generates signed checkout
+tokens and processes the result through T-42. Never put the signing key in a
+`VITE_*` variable or let the browser sign payment results. Restart the backend
+after changing provider. Production requires an explicit `PAYMENT_PROVIDER=momo`
+and refuses Mock before opening the HTTP listener.
+
+Do not switch providers while orders claimed by the old provider are unsettled:
+new payment requests for such orders are rejected, and callbacks from the old
+provider need its original verifier. Drain and reconcile those orders before a
+rolling switch. S-20's webhook idempotency branch and T-43's frontend Mock page
+still require contract reconciliation before this integration branch can merge.
 
 Backend provides a provider-neutral `IPaymentGateway` contract and a MoMo
 `captureWallet` sandbox adapter. `PAYMENT_PROVIDER=momo` selects it through the
@@ -550,7 +578,49 @@ giữa lúc 20 người đang giữ chỗ.
 
 ---
 
-## 👥 12. Đội ngũ phát triển
+## 12. S-10 / SCRUM-169: Giữ ghế theo mã ghế (T-22, T-23, T-24)
+
+T-22 thêm migration `007_create_seat_hold_seats.js`. `seat_holds` là lượt giữ
+chung của một người dùng cho một suất diễn; `seat_hold_seats` liên kết từng mã
+ghế với lượt đó. Thời hạn UTC nằm trên lượt giữ, vì vậy mọi ghế được thêm sau
+đều nhận cùng `expires_at`. Index expiry hiện có của bảng `seat_holds` phục vụ
+job dọn dữ liệu. View `public_seat_holds` chỉ công bố suất diễn, mã ghế, trạng
+thái và thời điểm hết hạn cho truy vấn T-19.
+
+T-23 dùng API mới, giữ nguyên API số lượng cũ của S-12:
+
+```http
+POST /api/showtimes/:id/seat-holds
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"seatIds":[101,102]}
+```
+
+Thành công trả `{data:{hold:{id,showtimeId,seatIds,quantity,expiresAt,serverNow}}}`.
+Mọi ghế trong một request được giữ hoặc bị từ chối cùng nhau. Gửi thêm ghế cho
+cùng lượt giữ sẽ giữ nguyên `expiresAt`; ghế đã bị giữ/bán hoặc suất không còn
+mở bán trả HTTP 409. `DELETE /api/showtimes/:id/seat-holds/:holdId/seats/:seatId`
+bỏ một ghế; bỏ ghế cuối cùng sẽ hủy lượt giữ. `SEAT_HOLD_TTL_SECONDS` cấu hình
+thời lượng, mặc định 600 giây.
+
+T-24 tải sơ đồ từ `GET /api/showtimes/:id/seats` của T-19, đo độ lệch giờ qua
+`GET /api/showtimes/:id/server-time`, rồi tính từng nhịp từ `expiresAt` của máy
+chủ. Khi đồng hồ về 0, giao diện tải lại sơ đồ để bỏ trạng thái giữ đã hết hạn.
+
+Các API giữ ghế kiểm tra inventory `seats`, trạng thái bán `showtimes.status`
+và view `public_sold_seats`; thiếu schema/view thì trả 503 để không báo ghế trống
+sai. T-11 cung cấp bảng ghế, T-15 cung cấp trạng thái mở bán và nguồn vé phải
+cung cấp `public_sold_seats` trước khi chạy nghiệm thu tích hợp. Không tạo view
+vé rỗng làm giả trạng thái ghế.
+
+Kiểm thử PostgreSQL trong CI phủ migration tiến/lùi, deadline dùng chung khi
+thêm ghế, cập nhật sơ đồ, từ chối suất đã đóng, rollback toàn bộ batch khi có
+ghế bận, bỏ ghế và 20 người đồng thời yêu cầu cùng một ghế.
+
+---
+
+## 👥 13. Đội ngũ phát triển
 
 * **Nhóm thực tập:** `T926_K19C5_N5`
 * **Môn học:** Thực tập Chuyên sâu (TTCS)
@@ -581,10 +651,24 @@ adapters must be connected before these new endpoints are available on staging.
 * **Sub-tasks:**
   - **T-17**: Truy vấn suất diễn đang mở bán có phân trang cursor (`GET /api/showtimes`), chỉ trả về các suất `on_sale` trong tương lai của sự kiện đã publish, sắp xếp theo thời gian diễn (`starts_at ASC, id ASC`), tính toán khoảng giá (`min_price`, `max_price`), có bộ đệm Redis 30 giây đạt tiêu chuẩn NFR (p95 < 500ms khi có 200 suất diễn).
   - **T-18**: Trang danh sách sự kiện (`EventListPage`) và trang chi tiết suất diễn (`ShowtimeDetailPage` / `/showtimes/:id`):
-    - **AC1:** Người dùng chưa đăng nhập vẫn xem được danh sách sự kiện kèm suất gần nhất được sắp xếp theo ngày diễn.
-    - **AC2:** Suất diễn ở trạng thái nháp (draft) hoặc đã đóng (closed) truy cập qua đường dẫn trực tiếp sẽ hiển thị thông báo *"Suất diễn không mở bán"* và **không hiển thị sơ đồ ghế**.
-    - **AC3:** Trang chi tiết suất đang bán hiển thị đầy đủ: tên sự kiện, thời gian, địa điểm, khoảng giá và nút *"Vào chọn ghế"* dẫn trực tiếp tới sơ đồ ghế.
-    - **AC4:** Khi danh sách có hơn 20 sự kiện, cuộn xuống cuối trang tự động tải thêm trang tiếp theo (Infinite Scroll).
+## 🏷️ Đặt giá vé cho từng hạng ghế của suất diễn (SCRUM-27 / S-15)
+
+* **User Story:** Là ban tổ chức tôi muốn đặt giá riêng cho từng hạng ghế của một suất để ghế gần sân khấu bán đắt hơn ghế xa.
+* **Sub-tasks:**
+  - **T-34**: Cột giá trên `seat_categories` kèm migration (`009_add_price_to_seat_categories.js`):
+    - Thêm cột `price` kiểu số nguyên (`INTEGER NULL CHECK (price >= 0)`) vào bảng `seat_categories` và `seat_holds`.
+    - API lấy danh sách hạng ghế: `GET /api/showtimes/:id/categories` (xác thực organizer sở hữu hoặc admin).
+    - API cập nhật giá: `PUT /api/showtimes/:id/categories/prices` (hoặc alias `PUT /api/showtimes/:id/pricing`), kiểm tra ràng buộc số nguyên đơn vị đồng, không âm, không dùng số thực (AC4, NFR).
+    - Suất diễn `showtimes` tổng hợp thêm `min_price`, `max_price`, `unpriced_category_count` khi liệt kê cho organizer.
+    - **AC2:** Bổ sung kiểm tra khi mở bán (`POST /api/showtimes/:id/open-sales`): nếu còn hạng ghế chưa có giá thì chặn với mã HTTP 409 `CATEGORY_MISSING_PRICE` và thông báo rõ tên hạng còn thiếu.
+    - **AC3:** Giá vé tại thời điểm giữ chỗ/đặt hàng được lưu cố định (`seat_holds.price`), khi đổi giá hạng ghế thì đơn/lượt giữ đang chờ giữ nguyên giá cũ, chỉ đơn tạo sau mới dùng giá mới.
+  - **T-35**: Màn hình đặt giá và hiện giá trên sơ đồ ghế:
+    - **Màn hình đặt giá (`ShowtimePricingModal`):** Truy cập tại Organizer Dashboard (`/organizer`) qua nút *"Đặt giá vé"*. Hỗ trợ nhập giá cho từng hạng ghế, tính năng gợi ý giá phân tầng nhanh, kiểm tra lỗi tức thì ngay tại ô input (in-field validation) khi nhập số âm hoặc số thực/chữ (AC4).
+    - **Hiện giá trên sơ đồ ghế (`SeatMapCanvas` & `EventDetail`):**
+      - Khi trỏ chuột / hover vào từng ghế, thanh thông tin hiển thị rõ tên ghế, hạng ghế và giá vé tương ứng (AC1).
+      - Thuộc tính `title` và `aria-label` của nút ghế chứa thông tin giá vé đã định dạng (VND).
+      - Hiển thị bảng giá tóm tắt từng hạng ghế (`categoryPricesSummary`) ngay trên sơ đồ ghế.
+      - Tạm tính đơn hàng tính chính xác theo tổng giá của từng ghế đã chọn (`totalCalculated`).
 
 ---
 
@@ -610,6 +694,19 @@ adapters must be connected before these new endpoints are available on staging.
 
 ---
 
+## 🛒 Xem lại chi tiết đơn trước khi thanh toán (SCRUM-192 / S-17)
+
+* **User Story:** Là người mua vé tôi muốn thấy rõ từng ghế, hạng, đơn giá và tổng tiền trước khi trả để không trả nhầm cho ghế mình không muốn.
+* **Sub-tasks:**
+  - **T-38**: Tính tổng tiền ở máy chủ từ giá hạng ghế, không tin số từ trình duyệt (`POST /api/payments/orders`):
+    - Đơn hàng được tạo từ lượt giữ ghế (`seat_hold`), máy chủ tự truy vấn giá từng ghế theo hạng vé trong database và cộng tổng.
+    - Mọi trường tổng tiền hoặc giá truyền từ trình duyệt đều bị bỏ qua (AC2).
+  - **T-39**: Trang tóm tắt đơn: ghế, hạng, đơn giá, tổng tiền, thời gian còn lại (`GET /api/payments/orders/:orderId/summary` & `CheckoutPage`):
+    - **AC1:** Khi mở trang đơn, hiển thị tên sự kiện, suất diễn, danh sách từng ghế kèm hạng và đơn giá, tổng tiền và đồng hồ đếm ngược thời gian còn lại.
+    - **AC3:** Khi thời hạn thanh toán đã hết, giao diện thông báo *"Đơn hàng đã hết hạn thanh toán"* và nút thanh toán bị ẩn hoàn toàn.
+    - **NFR:** Bảo vệ quyền riêng tư: chỉ chủ đơn (authenticated buyer sở hữu đơn hàng) mới xem được chi tiết đơn (HTTP 403 Forbidden nếu truy cập đơn của người khác).
+
+
 # T-45 / T-46: biên nhận và chống trùng webhook (Minh Quang)
 
 Chỉ bổ sung `payment_events` và handler chống trùng gọi T-42 của team trong
@@ -621,3 +718,190 @@ Job chạy khi backend khởi động và mỗi phút, dùng khoá đơn của T
 `pending` quá hạn sang `expired`, nhả allocations và xoá hold trong một transaction.
 `ORDER_EXPIRY_CLEANUP_INTERVAL_MS` mặc định `60000`. Không bổ sung kịch bản T-53.
 Xem [docs/T-52-order-expiry.md](docs/T-52-order-expiry.md).
+
+---
+
+## 👥 15. S-28: Admin tạo tài khoản nhân viên và gán vai trò
+
+**Vai trò mới**
+- `staff`: nhân viên soát vé, quét QR tại cổng.
+- `supervisor`: trưởng ca, quét QR và được cho vào có ghi chú khi vé đã dùng (S-31).
+
+Cách hai vai trò này được tạo:
+- DB mới: `npm run seed` tạo đủ 5 vai trò.
+- DB đang chạy: migration `202610210201_add_staff_roles` tự thêm 2 vai trò mới.
+
+**API (chỉ admin; vai trò khác nhận 403)**
+
+| API | Mô tả |
+| --- | --- |
+| `GET /api/admin/roles` | Danh sách vai trò |
+| `GET /api/admin/users?role=&q=&page=` | Danh sách tài khoản, lọc theo vai trò, tìm theo tên hoặc email (20 tài khoản/trang) |
+| `POST /api/admin/users` `{ email, fullName, password, role }` | Tạo tài khoản. Dùng được ngay, không cần kích hoạt qua email. Mật khẩu ≥ 8 ký tự, hash bằng Argon2id. Email trùng trả `409` |
+| `PATCH /api/admin/users/:id` `{ role?, isActive?, fullName? }` | Đổi vai trò, khoá hoặc mở khoá tài khoản. Admin không tự đổi vai trò hay tự khoá chính mình (`409 CANNOT_CHANGE_SELF`) |
+
+Lưu ý:
+- Vai trò mới áp dụng từ lần đăng nhập tiếp theo, vì JWT cũ vẫn mang vai trò cũ.
+- Tài khoản bị khoá không đăng nhập được.
+- Màn soát vé (S-30) kiểm tra vai trò và trạng thái trong DB mỗi lần quét, nên khoá tài khoản có hiệu lực ngay.
+
+**Giao diện.** Trang `/admin/users` (menu "Tài khoản" của admin) có:
+- Form tạo tài khoản.
+- Bảng tài khoản: lọc, tìm, đổi vai trò ngay trong bảng, khoá/mở khoá.
+
+**Kiểm thử.** `tests/staffAccounts.integration.test.js` (`RUN_STAFF_ACCOUNT_DB_TESTS=1`), chạy trên PostgreSQL thật và đăng nhập thật qua `/api/auth/login`, kiểm:
+- Tạo tài khoản rồi đăng nhập được ngay với đúng vai trò.
+- Đổi vai trò; tài khoản bị khoá không đăng nhập được.
+- Chỉ admin được tạo hoặc sửa tài khoản.
+- Dữ liệu sai bị từ chối.
+- Admin không tự khoá được chính mình.
+- Lọc và tìm kiếm.
+
+---
+
+## 🎫 14. S-25 / S-26: Vé điện tử có mã QR được ký
+
+**Phát vé (S-25).** Khi webhook thanh toán chuyển đơn sang `paid` (T-42), mỗi ghế chưa nhả của đơn được phát một vé trong bảng `tickets`, **trong cùng transaction** với trạng thái `paid`:
+- `order_item_id` là unique, nên webhook gửi lại bao nhiêu lần cũng chỉ có một vé cho mỗi ghế.
+- Nếu không phát đủ vé thì cả thanh toán rollback, đơn vẫn `pending` và cổng thanh toán sẽ gửi lại.
+- Migration tự phát vé cho các đơn đã `paid` từ trước khi có bảng vé.
+
+**QR có chữ ký (S-26).** Nội dung QR là `ET1.<mã vé>.<chữ ký>`:
+- Chữ ký là HMAC-SHA256 bằng `TICKET_QR_SECRET`, khoá chỉ có ở backend. Nếu chưa đặt biến này thì dùng khoá dẫn xuất từ `JWT_SECRET`; không có khoá mặc định viết sẵn trong code.
+- Sửa mã vé, sửa chữ ký hay tự ký bằng khoá khác đều bị từ chối.
+- QR không chứa thông tin cá nhân hay giá vé.
+- Hàm `verifyTicketCode` trong `backend/src/utils/ticketQr.js` chỉ trả mã vé khi chữ ký đúng. Bước soát vé (S-30) dùng hàm này.
+
+| API | Quyền | Mô tả |
+| --- | --- | --- |
+| `GET /api/tickets` | Đã đăng nhập | Tất cả vé của tôi, kèm `qrCode` và ảnh `qrImage` |
+| `GET /api/tickets/orders/:orderId` | Chủ đơn | Vé của một đơn. Lỗi: `409 ORDER_NOT_PAID` nếu đơn chưa thanh toán, `403` nếu đơn của người khác |
+
+**Giao diện.** Trang `/my-tickets` ("Vé của tôi" trên thanh điều hướng) hiển thị từng vé: sự kiện, suất, ghế, hạng, giá và QR. Thêm `?orderId=<id>` để chỉ xem vé của một đơn.
+
+**Kiểm thử.**
+- `tests/ticketQr.test.js`: 13 ca giả mạo/sai định dạng.
+- `tests/ticketIssuance.integration.test.js` (`RUN_TICKET_DB_TESTS=1`): chạy webhook MoMo ký thật trên PostgreSQL, rồi kiểm phát vé, idempotent, quyền xem và rollback khi không phát đủ vé.
+
+---
+
+## 🚪 16. S-29 / S-30: Soát vé tại cổng (nối S-31)
+
+**S-29: chọn suất và cổng trước khi quét**
+- Organizer khai báo cổng cho sự kiện trên trang `/organizer` (dòng "Cổng soát vé", nút **Sửa**, mỗi dòng một cổng).
+- Sự kiện chưa khai báo cổng thì có một cổng mặc định "Cổng chính".
+- Nhân viên mở `/scanner`, chọn suất (không hiện suất nháp; mỗi suất có số "Đã vào x/y vé"), chọn cổng, rồi bấm **Bắt đầu soát vé**.
+- Lựa chọn được nhớ trên máy. Server từ chối mọi lần quét không có suất/cổng, cổng không thuộc sự kiện, hoặc suất nháp.
+
+**S-30: quét QR.** Có ba cách đưa mã vào:
+- Camera sau của điện thoại (cần HTTPS hoặc localhost).
+- Ô nhập mã, dùng được với máy quét cầm tay.
+- Chọn ảnh có mã QR.
+
+Server xử lý mỗi lần quét theo thứ tự:
+1. Kiểm chữ ký QR (S-26).
+2. Khoá vé và đơn bằng `FOR SHARE`.
+3. Kiểm vai trò và trạng thái nhân viên ngay trong DB (S-28), nên tài khoản vừa bị khoá mất quyền ngay dù JWT còn hạn.
+4. Kiểm vé thuộc đúng suất.
+5. Ghi lượt vào vào sổ S-31, cùng một transaction.
+
+Kết quả hiển thị:
+
+| Mã | Ý nghĩa |
+| --- | --- |
+| `CHECKED_IN` | Vé hợp lệ, mời vào (xanh). Hiện ghế, hạng, sự kiện, suất |
+| `ALREADY_CHECKED_IN` | Vé đã dùng (đỏ). Hiện cổng, giờ và nhân viên của lần vào đầu |
+| `WRONG_SHOWTIME` | Vé của suất khác. Hiện suất đúng của vé |
+| `INVALID_QR` / `TICKET_VOID` / `TICKET_NOT_FOUND` | QR giả hoặc bị sửa / vé đã huỷ / không có vé |
+| `ADMITTED_WITH_NOTE` | Trưởng ca (`supervisor`) hoặc admin cho vào thêm, có lý do (S-31) |
+
+| API | Quyền |
+| --- | --- |
+| `GET /api/scanner/showtimes` | staff, supervisor, admin |
+| `POST /api/scanner/scan` `{ qrCode, showtimeId, gate }` | staff, supervisor, admin |
+| `POST /api/scanner/admit-with-note` `{ qrCode, showtimeId, gate, reason, requestId }` | supervisor, admin |
+| `GET/PUT /api/events/:id/gates` `{ gates: [...] }` | Organizer chủ sự kiện, admin |
+
+Đăng nhập bằng tài khoản staff hoặc supervisor thì vào thẳng `/scanner`.
+
+**Kiểm thử.** `tests/gateScanner.integration.test.js` (`RUN_GATE_SCAN_DB_TESTS=1`), 10 ca trên PostgreSQL với vé thật, QR ký thật và sổ S-31 thật:
+- Khai báo cổng.
+- Bắt buộc chọn suất và cổng.
+- Vé hợp lệ được cho vào.
+- QR giả, bị sửa hoặc ký bằng khoá khác bị từ chối.
+- Vé sai suất và vé đã huỷ bị từ chối.
+- Quét lại ở cổng khác thấy lần vào đầu.
+- 20 máy quét cùng lúc chỉ có 1 lượt vào.
+- Chỉ trưởng ca cho vào có ghi chú; gửi lại không cho vào thêm.
+- Nhân viên đã bị khoá bị chặn ngay.
+
+---
+
+## 📧 17. S-27 (SCRUM-223): Vé gửi qua email kèm mã QR (Cao Long)
+
+**Khi nào gửi.** Email chỉ được gửi **sau khi** thanh toán đã commit, tức là đơn đã `paid` và đã có vé (S-25):
+- Webhook trả 200 cho cổng thanh toán xong mới gửi, nên không bắt cổng phải chờ SMTP.
+- Mỗi đơn được nhận việc bằng một câu `UPDATE … FOR UPDATE SKIP LOCKED` trên `orders.ticket_email_*`. Vì vậy webhook gửi lại, job chạy song song hay nhiều server cùng lúc cũng chỉ gửi **một** email.
+- SMTP lỗi thì thanh toán vẫn thành công. Job `ticketEmailJob` (mỗi `TICKET_EMAIL_INTERVAL_MS`, mặc định 60 giây) thử lại, tối đa 5 lần.
+- Đơn đã `paid` trước khi nâng cấp không bị gửi email hàng loạt.
+
+**Nội dung email**
+- Sự kiện, địa điểm, giờ diễn theo giờ Việt Nam, tổng tiền.
+- Mỗi vé: ghế, hạng, giá, mã vé và **ảnh QR riêng**. QR là mã ký S-26 (`ET1.<mã vé>.<chữ ký>`), cùng loại máy soát vé S-30 quét được.
+- Ảnh QR là PNG đính kèm inline (`cid:`), vì Gmail và Outlook chặn ảnh `data:` URL.
+- Tên sự kiện và tên người mua được escape HTML.
+
+**Cấu hình gửi thật**
+- Đặt `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, `MAIL_FROM`. Với Gmail dùng `smtp.gmail.com:465`, `SMTP_SECURE=true` và App Password.
+- Không có `SMTP_HOST` thì chỉ ghi log (dev/test). Email kích hoạt tài khoản (S-03) cũng dùng chung SMTP này.
+
+**Gửi lại.** `POST /api/tickets/orders/:orderId/email`:
+- Chỉ chủ đơn gọi được, và đơn phải đã thanh toán.
+- Mỗi lần cách nhau ít nhất 60 giây (gọi sớm hơn trả `429`).
+- Trang `/my-tickets?orderId=…` có nút **Gửi lại vé qua email**.
+
+**Kiểm thử.** `tests/ticketEmail.integration.test.js` (`RUN_TICKET_EMAIL_DB_TESTS=1`), dùng webhook MoMo ký thật trên PostgreSQL, kiểm:
+- 1 email, 3 ảnh QR giải ra đúng mã vé.
+- HTML đã escape.
+- Webhook gửi 5 lần cộng job song song vẫn chỉ 1 email.
+- Thanh toán thất bại thì không có email.
+- SMTP lỗi thì job gửi lại; dừng sau 5 lần.
+- Quyền và giới hạn 60 giây của nút gửi lại.
+
+Chi tiết: [docs/S-27-ticket-email.md](docs/S-27-ticket-email.md).
+
+---
+
+## 📋 18. S-32: Xem lịch sử đơn hàng của tôi (SCRUM-220)
+
+> **Story:** `[S-32]` Xem lịch sử đơn hàng của tôi  
+> **Epic:** `[E-05]` Payments & Orders  
+> **Phân loại:** MoSCoW-Should | Sprint-4 | Tier-Next  
+> **Phụ thuộc:** `S-16` (Orders & Order Items schema)
+
+### 📌 Các tính năng & Tiêu chí chấp nhận (AC)
+- **AC1 & NFR: Danh sách đơn hàng mới nhất trước & phân trang:**
+  - Endpoint `GET /api/orders?page=1&limit=10&status=...`:
+    - Truy vấn danh sách đơn hàng thuộc quyền sở hữu của người dùng đăng nhập (`user_id = req.user.userId`).
+    - Sắp xếp mới nhất trước (`orders.created_at DESC, orders.id DESC`).
+    - Trả về thông tin trạng thái (`status`), sự kiện (`title`, `venue`), suất diễn (`starts_at`), số lượng ghế (`seat_count`) kèm chi tiết ghế (`seats: row_label, seat_number, category_name, unit_price`), tổng tiền (`total_amount`, `currency`).
+    - Phân trang chuẩn với metadata: `page`, `limit`, `totalOrders`, `totalPages`, `hasNextPage`, `hasPrevPage`.
+- **AC2: Kiểm soát quyền sở hữu và bảo mật:**
+  - Endpoint `GET /api/orders/:orderId`:
+    - Khi người dùng gọi với mã đơn của người khác: bị từ chối với mã lỗi `403 Forbidden` (`code: 'ORDER_FORBIDDEN'`).
+    - Khi mã đơn không tồn tại: `404 Not Found`.
+    - Khi mã đơn sai định dạng: `400 Bad Request`.
+    - Khi chưa đăng nhập: `401 Unauthorized`.
+- **AC3: Đơn hết hạn hoặc đã hủy:**
+  - Các đơn hàng ở trạng thái `expired` hoặc `cancelled` vẫn được lưu giữ và hiển thị đầy đủ trong lịch sử kèm huy hiệu tương ứng.
+  - Các đơn `pending` nhưng đã vượt quá thời hạn thanh toán (`expires_at <= now()`) được tự động nhận diện và hiển thị trạng thái `expired`.
+- **Giao diện người dùng (`OrderHistoryPage` / `/orders`):**
+  - Thanh tab lọc theo trạng thái: *Tất cả, Đã thanh toán, Chờ thanh toán, Đã hết hạn, Đã hủy*.
+  - Huy hiệu trạng thái trực quan với màu sắc & ký hiệu nhận diện: Đã thanh toán (xanh lá), Chờ thanh toán (vàng hổ phách), Đã hết hạn (đỏ hồng), Đã hủy (xám).
+  - Modal xem chi tiết đơn hàng trực tiếp trên trang.
+  - Nút *"Thanh toán ngay"* cho các đơn hàng `pending` còn trong hạn thanh toán.
+  - Tích hợp link "Đơn hàng" trên thanh điều hướng Header.
+
+### 🧪 Kiểm thử tự động
+- `backend/tests/orderHistoryS32.test.js`: 11 test cases kiểm thử tích hợp API endpoints (`GET /api/orders`, `GET /api/orders/:orderId`, 403 Forbidden khi xem đơn người khác, 401 khi chưa đăng nhập, phân trang, lọc trạng thái, xử lý rỗng, v.v.).
+- `backend/tests/orderModelS32.test.js`: 5 test cases kiểm thử logic tầng model `Order.getOrdersByUserId` và `Order.getOrderDetails` (phân trang, tính effectiveStatus cho đơn hết hạn, kiểm tra quyền sở hữu).

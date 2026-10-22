@@ -2,9 +2,10 @@ const { TextDecoder } = require('util');
 const { createSecureRouter } = require('../middleware/secureRoute');
 const { createPaymentResultService } = require('../services/paymentResultService');
 const { createPaymentWebhookService, PaymentWebhookError } = require('../services/paymentWebhookService');
+const { createTicketEmailDispatcher } = require('../services/ticketNotificationService');
 
 const createPaymentWebhookRouter = ({ paymentResults = createPaymentResultService(),
-  service = createPaymentWebhookService({ paymentResults }) } = {}) => {
+  service = createPaymentWebhookService({ paymentResults }), ticketEmails = createTicketEmailDispatcher() } = {}) => {
   const router = createSecureRouter();
   router.post('/webhook', { public: true }, async (req, res) => {
     // S-21 / T-48: app.js gives this route the exact raw bytes; nothing has parsed the body yet.
@@ -29,6 +30,8 @@ const createPaymentWebhookRouter = ({ paymentResults = createPaymentResultServic
       console.error('[PaymentWebhook] Processing failed.');
       return res.status(500).json({ success: false });
     }
+    // S-27: thanh toán đã commit -> gửi email vé, không bắt cổng thanh toán chờ. Lỗi thì job gửi lại.
+    ticketEmails.dispatchOrder(verifiedResult.orderId).catch(() => console.error('[TicketEmail] Dispatch failed; will retry.'));
     return res.status(200).json({ success: true });
   });
   return router;

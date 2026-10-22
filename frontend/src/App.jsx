@@ -11,8 +11,13 @@ import EventListPage   from './pages/EventListPage'
 import EventDetailPage from './pages/EventDetailPage'
 import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
+import OrderHistoryPage from './pages/OrderHistoryPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
+import AdminUsersPage from './pages/AdminUsersPage'
+import MyTicketsPage from './pages/MyTicketsPage'
+import PaymentResultPage from './pages/PaymentResultPage'
+import ScannerPage from './pages/ScannerPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -50,6 +55,12 @@ export default function App() {
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
             <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/orders" element={<OrderHistoryPage />} />
+            {/* S-25: vé điện tử kèm QR */}
+            <Route path="/my-tickets" element={<MyTicketsPage />} />
+            {/* S-22: MoMo trả người mua về MOMO_REDIRECT_URL (/payment/return?orderId=...) */}
+            <Route path="/payment/return" element={<PaymentResultPage />} />
+            <Route path="/payment-result" element={<PaymentResultPage />} />
           </Route>
 
           {/* ── Organizer-only routes ────────────────────────── */}
@@ -58,9 +69,16 @@ export default function App() {
             <Route path="/organizer" element={<OrganizerDashboardPage />} />
           </Route>
 
+          {/* ── S-29 / S-30: soát vé (vai trò được kiểm lại ở server mỗi lần quét) ── */}
+          <Route element={<PrivateRoute roles={['staff', 'supervisor', 'admin']} />}>
+            <Route path="/scanner" element={<ScannerPage />} />
+          </Route>
+
           {/* ── Admin-only routes ─────────────────────────────── */}
           <Route element={<PrivateRoute roles={['admin']} />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
+            {/* S-28: tài khoản nhân viên và vai trò */}
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           {/* ── 404 fallback ─────────────────────────────────── */}

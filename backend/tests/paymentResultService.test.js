@@ -72,6 +72,7 @@ const createFixture = ({ result = BASE_RESULT, order = {}, hold = {}, allocation
       state.order.gateway_result_status = values.status;
     }),
     deletePaymentHold: jest.fn(async () => { state.hold = null; }),
+    issueTickets: jest.fn(async () => state.allocations.length),
   };
   const gateway = {
     verifyWebhook: jest.fn(async () => ({ payload: { verified: true } })),
@@ -88,6 +89,15 @@ const createFixture = ({ result = BASE_RESULT, order = {}, hold = {}, allocation
 const verify = (service) => service.verifyWebhook({ rawBody: Buffer.from('signed payload'), headers: {} });
 
 describe('T-42 payment result service', () => {
+  test('S-25: rolls back the payment when not every paid seat receives a ticket', async () => {
+    const { repository, service, transaction } = createFixture();
+    repository.issueTickets.mockResolvedValueOnce(0);
+    const verified = await verify(service);
+
+    await expect(service.applyVerifiedResult(verified, { transaction }))
+      .rejects.toMatchObject({ code: 'TICKET_ISSUE_FAILED' });
+  });
+
   test('verifies the raw webhook and atomically marks the order paid and releases its hold', async () => {
     const { state, transaction, repository, service } = createFixture();
     const verified = await verify(service);
@@ -104,6 +114,7 @@ describe('T-42 payment result service', () => {
       gatewayTransactionId: '987654321',
     });
     expect(repository.deletePaymentHold).toHaveBeenCalledWith(transaction, expect.any(Object));
+    expect(repository.issueTickets).toHaveBeenCalledWith(transaction, { orderId: ORDER_ID });
     expect(repository.recordGatewayResult).toHaveBeenCalledWith(transaction, {
       orderId: ORDER_ID,
       status: 'succeeded',

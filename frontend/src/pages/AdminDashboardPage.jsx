@@ -90,7 +90,10 @@ export default function AdminDashboardPage() {
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Quản trị hệ thống</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Quản trị hệ thống</h1>
+          <Link to="/admin/users" className="text-sm font-medium text-pink-600 hover:underline">Tài khoản & vai trò →</Link>
+        </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard label="Tổng sự kiện" value={stats.total} accent="text-gray-900" />

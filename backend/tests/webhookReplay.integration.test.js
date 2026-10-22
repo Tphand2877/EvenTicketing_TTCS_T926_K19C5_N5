@@ -74,7 +74,7 @@ describeDatabase('T-47: gửi lại cùng một webhook 5 lần và đếm số 
 
   // Mỗi test bắt đầu với 2 đơn chờ thanh toán: đơn A (ghế 1-3) và đơn B (ghế 4-6)
   beforeEach(async () => {
-    for (const table of ['payment_events', 'seat_holds', 'order_items', 'orders']) await database(table).del();
+    for (const table of ['tickets', 'payment_events', 'seat_holds', 'order_items', 'orders']) await database(table).del();
     await database('orders').insert([[ORDER_A, 1], [ORDER_B, 2]].map(([id, userId]) => ({
       id, user_id: userId, status: 'pending', total_amount: TOTAL, currency: 'VND', expires_at: '2099-01-01',
       gateway_provider: 'momo', gateway_request_id: id, payment_request_status: 'ready',
@@ -107,6 +107,7 @@ describeDatabase('T-47: gửi lại cùng một webhook 5 lần và đếm số 
     expect(ticketsAfterEach).toEqual([3, 3, 3, 3, 3]);
     expect(await soldSeats()).toEqual([1, 2, 3]);
     expect(await count('order_items')).toBe(6); // không sinh thêm dòng vé nào
+    expect(await count('tickets', { order_id: ORDER_A })).toBe(3); // S-25: đúng 3 vé điện tử
     expect(await count('payment_events')).toBe(1);
     expect(await database('payment_events').first()).toMatchObject({ transaction_id: '4100000001', raw_payload: rawBody, outcome: 'processed' });
     expect(await database('orders').where({ id: ORDER_A }).first()).toMatchObject({ status: 'paid', gateway_transaction_id: '4100000001' });
@@ -123,6 +124,7 @@ describeDatabase('T-47: gửi lại cùng một webhook 5 lần và đếm số 
     expect(await tickets(ORDER_A)).toBe(3);
     expect(await soldSeats()).toEqual([1, 2, 3]);
     expect(await count('payment_events')).toBe(1);
+    expect(await count('tickets')).toBe(3);
   });
 
   test('Cùng giao dịch nhưng body khác byte (5 cách định dạng JSON, chữ ký vẫn hợp lệ): vẫn chỉ 3 vé', async () => {

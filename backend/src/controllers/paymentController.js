@@ -3,7 +3,7 @@ const { PaymentServiceError } = require('../services/paymentService');
 const ERROR_RESPONSES = {
   INVALID_ORDER_ID: [400, 'Mã đơn hàng không hợp lệ.'],
   ORDER_NOT_FOUND: [404, 'Không tìm thấy đơn hàng.'],
-  ORDER_FORBIDDEN: [403, 'Bạn không có quyền thanh toán đơn hàng này.'],
+  ORDER_FORBIDDEN: [403, 'Bạn không có quyền xem hoặc thanh toán đơn hàng này.'],
   ORDER_ALREADY_PAID: [409, 'Đơn hàng đã được thanh toán.'],
   ORDER_NOT_PAYABLE: [409, 'Đơn hàng hiện không thể thanh toán.'],
   ORDER_EXPIRED: [409, 'Đơn hàng đã hết hạn thanh toán.'],
@@ -74,8 +74,63 @@ const createPaymentStatusController = ({ paymentService }) => async (req, res) =
   }
 };
 
+const createOrderSummaryController = ({ paymentService }) => async (req, res) => {
+  try {
+    const order = await paymentService.getOrderSummary({
+      orderId: req.params.orderId,
+      userId: req.user.userId,
+    });
+    return res.status(200).json({ success: true, data: { order } });
+  } catch (error) {
+    return sendPaymentError(error, req, res);
+  }
+};
+
+const ORDER_ERROR_STATUS = {
+  HOLD_NOT_FOUND: 404,
+  HOLD_FORBIDDEN: 403,
+  HOLD_EXPIRED: 409,
+  HOLD_ALREADY_ORDERED: 409,
+  HOLD_SEATS_INVALID: 409,
+  NOT_ENOUGH_SEATS: 409,
+  CATEGORY_MISSING_PRICE: 409,
+  INVALID_ORDER_TOTAL: 409,
+};
+
+const createOrderController = ({ orders = require('../models/Order') } = {}) => async (req, res, next) => {
+  try {
+    const { holdId } = req.body;
+    if (!holdId) {
+      return res.status(400).json({ success: false, message: 'Thiếu mã giữ chỗ (holdId).' });
+    }
+    // T-38: Máy chủ tự tính tổng tiền từ giá hạng ghế và bỏ qua bất kỳ số tiền nào gửi từ trình duyệt
+    const order = await orders.createOrderFromHold({
+      holdId,
+      userId: req.user.userId,
+      now: new Date(),
+    });
+    return res.status(201).json({
+      success: true,
+      message: 'Tạo đơn hàng thành công.',
+      data: { order },
+    });
+  } catch (error) {
+    // Lỗi nghiệp vụ của createOrderFromHold: mã lỗi -> HTTP status
+    const status = ORDER_ERROR_STATUS[error.code];
+    if (status) {
+      const body = { success: false, code: error.code, message: error.message };
+      if (error.details) body.details = error.details;
+      return res.status(status).json(body);
+    }
+    return next(error);
+  }
+};
+
 module.exports = {
   ERROR_RESPONSES,
   createPaymentController,
   createPaymentStatusController,
+  createOrderSummaryController,
+  createOrderController,
 };
+

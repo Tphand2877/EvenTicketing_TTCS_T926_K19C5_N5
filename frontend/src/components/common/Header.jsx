@@ -6,12 +6,17 @@ const roleLabels = {
   admin: { label: 'Admin', color: 'bg-red-100 text-red-700' },
   organizer: { label: 'Organizer', color: 'bg-purple-100 text-purple-700' },
   buyer: { label: 'Buyer', color: 'bg-blue-100 text-blue-700' },
+  staff: { label: 'Soát vé', color: 'bg-amber-100 text-amber-700' },
+  supervisor: { label: 'Trưởng ca', color: 'bg-orange-100 text-orange-700' },
 }
 
 const getNavLinks = (role) => [
   { to: '/events', label: 'Sự kiện' },
+  ...(role ? [{ to: '/orders', label: 'Đơn hàng' }] : []),
+  ...(role ? [{ to: '/my-tickets', label: 'Vé của tôi' }] : []),
+  ...(['staff', 'supervisor', 'admin'].includes(role) ? [{ to: '/scanner', label: 'Soát vé' }] : []),
   ...(role === 'organizer' || role === 'admin' ? [{ to: '/organizer', label: 'Quản lý' }] : []),
-  ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }] : []),
+  ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }, { to: '/admin/users', label: 'Tài khoản' }] : []),
 ]
 
 const navClass = ({ isActive }) =>
@@ -49,7 +54,7 @@ export default function Header() {
           {/* Nav links (desktop) */}
           <nav className="hidden md:flex items-center gap-6">
             {links.map((l) => (
-              <NavLink key={l.to} to={l.to} className={navClass}>{l.label}</NavLink>
+              <NavLink key={l.to} to={l.to} end={l.to === '/admin'} className={navClass}>{l.label}</NavLink>
             ))}
           </nav>
 
@@ -117,6 +122,7 @@ export default function Header() {
             <NavLink
               key={l.to}
               to={l.to}
+              end={l.to === '/admin'}
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
                 `block px-3 py-2 rounded-lg text-sm font-medium ${isActive ? 'bg-pink-50 text-pink-600' : 'text-gray-700 hover:bg-gray-50'}`
