@@ -14,9 +14,16 @@ import {
 } from '../services/eventService'
 import SeatMapUploadModal from '../components/seatmap/SeatMapUploadModal'
 import ShowtimePricingModal from '../components/seatmap/ShowtimePricingModal'
+import ImageDropInput from '../components/common/ImageDropInput'
 
-const EMPTY_EVENT = { title: '', venue: '', category: CATEGORIES[0], description: '', image_url: '', published: true }
+const EMPTY_EVENT = { title: '', venue: '', category: CATEGORIES[0], description: '', image_url: '', stage_map_url: '', published: true }
 const EMPTY_SHOWTIME = { starts_at: '', price: '', capacity: '' }
+const STAGE_PRESETS = [
+  { label: '🎻 Nhà hát giao hưởng', url: '/images/stage-symphony.svg' },
+  { label: '💻 Keynote hội nghị', url: '/images/stage-tech-summit.svg' },
+  { label: '⚽ Sân vận động', url: '/images/stage-stadium.svg' },
+  { label: '🎸 Đại nhạc hội Concert', url: '/images/sample-stage-map.png' },
+]
 
 /**
  * SCRUM-80 – Organizer quản lý sự kiện & suất diễn
@@ -34,6 +41,32 @@ export default function OrganizerDashboardPage() {
   const [showtimeFor, setShowtimeFor]   = useState(null) // event id đang mở form suất diễn
   const [showtimeForm, setShowtimeForm] = useState(EMPTY_SHOWTIME)
   const [panelRefresh, setPanelRefresh] = useState(0) // tải lại danh sách suất sau khi thêm suất
+  const [editingEventId, setEditingEventId] = useState(null)
+  const [editImagesForm, setEditImagesForm] = useState({ image_url: '', stage_map_url: '' })
+  const [savingEditImages, setSavingEditImages] = useState(false)
+
+  const handleStartEditImages = (ev) => {
+    setEditingEventId(ev.id)
+    setEditImagesForm({
+      image_url: ev.image_url || '',
+      stage_map_url: ev.stage_map_url || '',
+    })
+  }
+
+  const handleSaveEditImages = async (eventId) => {
+    setSavingEditImages(true)
+    const ok = await runAction(
+      () => updateEvent(eventId, {
+        image_url: editImagesForm.image_url?.trim() || null,
+        stage_map_url: editImagesForm.stage_map_url?.trim() || null,
+      }),
+      'Đã cập nhật sơ đồ và ảnh cho sự kiện thành công.'
+    )
+    if (ok) {
+      setEditingEventId(null)
+    }
+    setSavingEditImages(false)
+  }
 
   // S-06 / T-14: Modal tải lên và xem trước sơ đồ ghế trực quan
   const [uploadSeatMapFor, setUploadSeatMapFor] = useState(null)
@@ -155,8 +188,22 @@ export default function OrganizerDashboardPage() {
             </select>
             <textarea name="description" rows={4} maxLength={5000} placeholder="Mô tả"
               value={eventForm.description} onChange={setField(setEventForm)} className="input-field" />
-            <input name="image_url" type="url" placeholder="Link ảnh (https://...)"
-              value={eventForm.image_url} onChange={setField(setEventForm)} className="input-field" />
+            <ImageDropInput
+              label="Ảnh banner sự kiện:"
+              value={eventForm.image_url}
+              onChange={(val) => setEventForm((f) => ({ ...f, image_url: val }))}
+              placeholder="Dán link ảnh banner (https://...) hoặc kéo thả tệp ảnh vào đây"
+              helpText="Ảnh bìa chính của sự kiện xuất hiện ở đầu trang sự kiện."
+            />
+
+            <ImageDropInput
+              label="Sơ đồ khán đài sân khấu:"
+              value={eventForm.stage_map_url}
+              onChange={(val) => setEventForm((f) => ({ ...f, stage_map_url: val }))}
+              placeholder="Dán link ảnh sơ đồ hoặc kéo thả tệp ảnh sơ đồ vào đây"
+              presets={STAGE_PRESETS}
+              helpText="Người mua sẽ xem ảnh sơ đồ này ở trang chọn chỗ để đối chiếu các khán đài & cổng vào."
+            />
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input name="published" type="checkbox" checked={eventForm.published} onChange={setField(setEventForm)} />
               Công khai ngay
@@ -199,6 +246,16 @@ export default function OrganizerDashboardPage() {
                         Xem
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingEventId === event.id) setEditingEventId(null)
+                        else handleStartEditImages(event)
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-pink-200 text-pink-600 hover:bg-pink-50"
+                    >
+                      {editingEventId === event.id ? 'Đóng sửa ảnh' : 'Sửa sơ đồ / ảnh'}
+                    </button>
                     <button onClick={() => { setShowtimeFor(event.id); setShowtimeForm(EMPTY_SHOWTIME) }}
                       className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
                       + Suất diễn
@@ -213,6 +270,44 @@ export default function OrganizerDashboardPage() {
                     </button>
                   </div>
                 </div>
+
+                {editingEventId === event.id && (
+                  <div className="mt-4 pt-4 border-t border-pink-100 bg-pink-50/20 p-4 rounded-2xl space-y-3">
+                    <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Chỉnh sửa ảnh banner &amp; Sơ đồ sân khấu sự kiện:
+                    </h4>
+                    <ImageDropInput
+                      label="Ảnh banner sự kiện:"
+                      value={editImagesForm.image_url}
+                      onChange={(val) => setEditImagesForm((f) => ({ ...f, image_url: val }))}
+                      placeholder="Dán link ảnh banner (https://...) hoặc kéo thả ảnh vào đây"
+                    />
+                    <ImageDropInput
+                      label="Sơ đồ khán đài sân khấu:"
+                      value={editImagesForm.stage_map_url}
+                      onChange={(val) => setEditImagesForm((f) => ({ ...f, stage_map_url: val }))}
+                      placeholder="Dán link ảnh sơ đồ hoặc kéo thả tệp ảnh sơ đồ vào đây"
+                      presets={STAGE_PRESETS}
+                    />
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEventId(null)}
+                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-100"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingEditImages}
+                        onClick={() => handleSaveEditImages(event.id)}
+                        className="px-4 py-1.5 rounded-lg bg-pink-600 text-white text-xs font-bold hover:bg-pink-700 disabled:opacity-60"
+                      >
+                        {savingEditImages ? 'Đang lưu…' : 'Lưu ảnh & sơ đồ'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {showtimeFor === event.id && (
                   <form onSubmit={(e) => handleCreateShowtime(e, event.id)}

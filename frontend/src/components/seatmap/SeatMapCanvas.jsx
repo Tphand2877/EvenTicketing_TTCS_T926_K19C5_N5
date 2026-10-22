@@ -191,33 +191,39 @@ export default function SeatMapCanvas({
         </div>
       </div>
 
-      {/* S-15 / AC1: Thanh thông tin chi tiết khi trỏ chuột vào ghế */}
-      {hoveredSeat ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-pink-200 rounded-xl text-xs shadow-sm animate-fade-in"
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-gray-900">
-              Ghế {hoveredSeat.row}{hoveredSeat.number}
-            </span>
-            {hoveredSeat.category && (
-              <span className="bg-white border border-gray-200 px-2 py-0.5 rounded text-[11px] font-semibold text-gray-700">
-                Hạng {hoveredSeat.category}
+      {/* S-15 / AC1: Thanh thông tin chi tiết khi trỏ chuột vào ghế (cố định chiều cao tránh layout shift giật bảng) */}
+      <div className="min-h-[42px] flex items-center">
+        {hoveredSeat ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="w-full flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 border border-pink-200 rounded-xl text-xs shadow-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-gray-900">
+                Ghế {hoveredSeat.row}{hoveredSeat.number}
               </span>
-            )}
-            <span className="text-gray-500 text-[11px]">
-              &bull; {hoveredSeat.status === 'sold' ? 'Đã bán' : hoveredSeat.status === 'held' ? 'Đang có người giữ' : 'Còn trống'}
-            </span>
+              {hoveredSeat.category && (
+                <span className="bg-white border border-gray-200 px-2 py-0.5 rounded text-[11px] font-semibold text-gray-700">
+                  Hạng {hoveredSeat.category}
+                </span>
+              )}
+              <span className="text-gray-500 text-[11px]">
+                &bull; {hoveredSeat.status === 'sold' ? 'Đã bán' : hoveredSeat.status === 'held' ? 'Đang có người giữ' : 'Còn trống'}
+              </span>
+            </div>
+            <div className="font-bold text-pink-600 text-sm">
+              {hoveredSeat.price !== undefined && hoveredSeat.price !== null
+                ? formatPrice(hoveredSeat.price)
+                : 'Chưa có giá'}
+            </div>
           </div>
-          <div className="font-bold text-pink-600 text-sm">
-            {hoveredSeat.price !== undefined && hoveredSeat.price !== null
-              ? formatPrice(hoveredSeat.price)
-              : 'Chưa có giá'}
+        ) : (
+          <div className="w-full px-3.5 py-2 text-xs text-gray-400 italic bg-gray-50/50 border border-dashed border-gray-200 rounded-xl">
+            Di chuột vào ghế bất kỳ để xem chi tiết hạng vé và giá ghế
           </div>
-        </div>
-      ) : null}
+        )}
+      </div>
 
       {/* Sân khấu */}
       <div className="text-center text-[10px] font-semibold tracking-widest text-gray-400 uppercase select-none">

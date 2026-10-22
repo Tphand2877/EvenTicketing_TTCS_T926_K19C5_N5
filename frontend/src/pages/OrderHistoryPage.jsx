@@ -470,13 +470,22 @@ export default function OrderHistoryPage() {
             </div>
 
             {/* Modal actions */}
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-end items-center gap-2 pt-4">
               <button
                 onClick={handleCloseDetail}
                 className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
               >
                 Đóng
               </button>
+              {detailOrder.status === 'paid' && (
+                <Link
+                  to={`/payment/return?orderId=${encodeURIComponent(detailOrder.id)}`}
+                  className="px-4 py-2 text-xs font-semibold text-pink-600 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-xl inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <span>🖨️</span>
+                  <span>In hóa đơn & vé</span>
+                </Link>
+              )}
               <OrderActions order={detailOrder} size="md" />
             </div>
           </div>

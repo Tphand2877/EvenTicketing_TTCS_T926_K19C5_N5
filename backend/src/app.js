@@ -13,6 +13,7 @@ const { ticketRouter } = require('./routes/ticketRoutes');
 const { adminUserRouter } = require('./routes/adminUserRoutes');
 const { eventGateRouter, scannerRouter } = require('./routes/scannerRoutes');
 const { orderRouter } = require('./routes/orderRoutes');
+const { createUploadRouter } = require('./routes/uploadRoutes');
 const { auditAccessDenials } = require('./middleware/auditLogger');
 const { extractJsonErrorDetails } = require('./utils/seatMapValidator');
 
@@ -60,11 +61,25 @@ app.use('/api/tickets', ticketRouter);     // S-25 / S-26
 app.use('/api/admin', adminUserRouter);    // S-28
 app.use('/api/scanner', scannerRouter);    // S-29 / S-30 / S-31
 app.use('/api/orders', orderRouter);       // SCRUM-220 [S-32]
+app.use('/api/upload', createUploadRouter());
 app.use('/api', protectedRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ─── Điều hướng các trang frontend nếu truy cập nhầm port backend 3000 ────────
+app.get(['/payment/return', '/payment-result', '/my-tickets', '/orders', '/events', '/events/:id'], (req, res) => {
+  let frontendOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+  if (req.headers.referer) {
+    try {
+      const parsed = new URL(req.headers.referer).origin;
+      if (parsed && !parsed.includes(':3000')) frontendOrigin = parsed;
+    } catch {}
+  }
+  const query = new URLSearchParams(req.query).toString();
+  return res.redirect(`${frontendOrigin}${req.path}${query ? '?' + query : ''}`);
 });
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────

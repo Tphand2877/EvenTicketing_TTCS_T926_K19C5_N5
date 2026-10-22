@@ -136,6 +136,16 @@ const validateEvent = ({ partial = false } = {}) => (req, res, next) => {
     }
   }
 
+  if (has('stage_map_url')) {
+    if (body.stage_map_url === null || body.stage_map_url === '') {
+      data.stage_map_url = null;
+    } else if (typeof body.stage_map_url !== 'string' || body.stage_map_url.length > 500000) {
+      errors.push('Ảnh sơ đồ sân khấu không hợp lệ.');
+    } else {
+      data.stage_map_url = body.stage_map_url.trim();
+    }
+  }
+
   if (has('status')) {
     if (!EVENT_STATUSES.includes(body.status)) errors.push(`Trạng thái phải là: ${EVENT_STATUSES.join(' | ')}.`);
     else data.status = body.status;

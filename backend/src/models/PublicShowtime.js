@@ -2,7 +2,7 @@ const db = require('../config/database');
 
 // T-11/T-15 schema contract is documented in docs/minh-quang-public-queries.md.
 const publicFields = `s.id, s.event_id, e.title, e.description, e.category,
-  e.venue, e.image_url, s.starts_at, s.ends_at, s.status`;
+  e.venue, e.image_url, e.stage_map_url, s.starts_at, s.ends_at, s.status`;
 const createPublicShowtimeRepository = (database) => ({
   async listOnSale({ limit, after }) {
     const bindings = [];
@@ -43,7 +43,7 @@ const createPublicShowtimeRepository = (database) => ({
     // Missing adapters must fail closed, never label unidentified allocations free.
     const { rows } = await database.raw(`
       WITH target AS (
-        SELECT s.id, (s.status = 'on_sale' AND s.starts_at > statement_timestamp()) AS on_sale
+        SELECT s.id, e.stage_map_url, (s.status = 'on_sale' AND s.starts_at > statement_timestamp()) AS on_sale
         FROM showtimes s JOIN events e ON e.id = s.event_id
         WHERE s.id = ? AND e.status = 'published'
       ), holds AS (
