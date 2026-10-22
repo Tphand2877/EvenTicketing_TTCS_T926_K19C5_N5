@@ -30,6 +30,13 @@
    - Pipeline GitHub Actions CI tự động Lint, Test, Build cả Frontend & Backend.
    - Đóng gói Docker đa tầng (Multi-stage build) kết hợp Nginx reverse proxy đồng bộ port và định tuyến API `/api/`.
    - Script tự động hóa triển khai Staging (`deploy-staging.ps1`) hỗ trợ kiểm thử candidate image, health check và cơ chế Rollback an toàn.
+5. **Quản trị tạo tài khoản nhân viên & Gán vai trò thời gian thực (S-28 / Sprint 4):**
+   - Mở rộng hệ thống vai trò nội bộ: `ticket_checker` (nhân viên soát vé), `accountant` (kế toán), `organizer` (ban tổ chức), `admin` (quản trị viên) và `buyer` (người mua).
+   - Quản trị viên tạo tài khoản nhân viên nội bộ trực tiếp, mật khẩu băm an toàn theo chuẩn Argon2id và tự động kích hoạt ngay.
+   - **Real-time RBAC Enforcement (AC2):** Thay đổi vai trò có hiệu lực tức thời ở request API tiếp theo mà người dùng không cần đăng xuất.
+   - **Account Deactivation (AC3):** Vô hiệu hóa tài khoản lập tức chặn đăng nhập kèm thông báo liên hệ quản trị và chặn ngay các phiên đang hoạt động.
+   - **Giao diện Soát vé chuyên biệt (`/scanner` - AC1):** Nhân viên soát vé đăng nhập chỉ thấy và chỉ truy cập được màn hình quét vé; xác thực mã QR, ngăn chặn vé giả và cảnh báo vé quét trùng lặp tại cửa (mỗi vé 1 lần).
+   - **Audit Logging phân quyền (NFR-1):** Ghi nhận toàn bộ lịch sử thay đổi vai trò và trạng thái tài khoản vào bảng `role_change_logs` kèm ID người thực hiện (`actor_id`).
 
 ---
 

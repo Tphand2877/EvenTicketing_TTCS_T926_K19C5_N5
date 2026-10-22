@@ -42,6 +42,11 @@ export default function PrivateRoute({ children, roles = [] }) {
     return <Navigate to={`/login?returnTo=${returnTo}`} replace />
   }
 
+  // S-28 AC1: Nhân viên soát vé chỉ thấy màn hình quét vé
+  if (user?.role === 'ticket_checker' && location.pathname !== '/scanner') {
+    return <Navigate to="/scanner" replace />
+  }
+
   // Role check (if roles specified)
   if (roles.length > 0 && !roles.includes(user?.role)) {
     return (
@@ -58,8 +63,8 @@ export default function PrivateRoute({ children, roles = [] }) {
             Trang này yêu cầu quyền: <strong>{roles.join(', ')}</strong>.
             Tài khoản của bạn là: <strong>{user?.role || 'không xác định'}</strong>.
           </p>
-          <a href="/events" className="btn-primary inline-block">
-            Về trang chủ
+          <a href={user?.role === 'ticket_checker' ? '/scanner' : '/events'} className="btn-primary inline-block">
+            {user?.role === 'ticket_checker' ? 'Về màn hình quét vé' : 'Về trang chủ'}
           </a>
         </div>
       </div>

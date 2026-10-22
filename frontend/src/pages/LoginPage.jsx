@@ -30,7 +30,13 @@ export default function LoginPage() {
     try {
       const data = await loginApi(email, password, remember)
       login(data)
-      navigate(returnTo, { replace: true })
+
+      // S-28 AC1: Nhân viên soát vé khi đăng nhập chỉ thấy màn hình quét vé
+      if (data?.user?.role === 'ticket_checker') {
+        navigate('/scanner', { replace: true })
+      } else {
+        navigate(returnTo, { replace: true })
+      }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Đăng nhập thất bại'
       // Map common backend error messages to Vietnamese

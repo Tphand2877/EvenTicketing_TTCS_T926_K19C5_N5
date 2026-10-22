@@ -27,5 +27,15 @@ exports.seed = async function (knex) {
       name: 'buyer',
       description: 'Người mua - đặt vé và xem sự kiện',
     },
+    {
+      id: 4,
+      name: 'ticket_checker',
+      description: 'Nhân viên soát vé - quét và kiểm tra vé tại cửa sự kiện',
+    },
+    {
+      id: 5,
+      name: 'accountant',
+      description: 'Kế toán - quản lý và đối soát doanh thu, đơn hàng thanh toán',
+    },
   ]);
 };

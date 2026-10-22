@@ -6,13 +6,22 @@ const roleLabels = {
   admin: { label: 'Admin', color: 'bg-red-100 text-red-700' },
   organizer: { label: 'Organizer', color: 'bg-purple-100 text-purple-700' },
   buyer: { label: 'Buyer', color: 'bg-blue-100 text-blue-700' },
+  ticket_checker: { label: 'Soát vé', color: 'bg-emerald-100 text-emerald-700' },
+  accountant: { label: 'Kế toán', color: 'bg-amber-100 text-amber-700' },
 }
 
-const getNavLinks = (role) => [
-  { to: '/events', label: 'Sự kiện' },
-  ...(role === 'organizer' || role === 'admin' ? [{ to: '/organizer', label: 'Quản lý' }] : []),
-  ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }] : []),
-]
+const getNavLinks = (role) => {
+  // S-28 AC1: Nhân viên soát vé chỉ thấy màn hình quét vé
+  if (role === 'ticket_checker') {
+    return [{ to: '/scanner', label: 'Soát vé' }]
+  }
+
+  return [
+    { to: '/events', label: 'Sự kiện' },
+    ...(role === 'organizer' || role === 'admin' ? [{ to: '/organizer', label: 'Quản lý' }] : []),
+    ...(role === 'admin' ? [{ to: '/admin', label: 'Admin' }, { to: '/scanner', label: 'Soát vé' }] : []),
+  ]
+}
 
 const navClass = ({ isActive }) =>
   `text-sm font-medium transition-colors ${isActive ? 'text-pink-600' : 'text-gray-600 hover:text-pink-600'}`
@@ -37,7 +46,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
+          <Link to={user?.role === 'ticket_checker' ? '/scanner' : '/'} className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-pink-600 flex items-center justify-center shadow-md">
               <span className="text-white font-bold text-sm">ET</span>
             </div>

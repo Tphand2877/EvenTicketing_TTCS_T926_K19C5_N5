@@ -13,6 +13,7 @@ import ShowtimeDetailPage from './pages/ShowtimeDetailPage'
 import CheckoutPage    from './pages/CheckoutPage'
 import OrganizerDashboardPage from './pages/OrganizerDashboardPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
+import TicketScannerPage from './pages/TicketScannerPage'
 
 // SCRUM-203: mock payment gateway page. Only exists when the flag is on,
 // so it is left out of production builds (the dynamic import is dropped).
@@ -50,6 +51,11 @@ export default function App() {
           {/* ── Protected routes (login required) ───────────── */}
           <Route element={<PrivateRoute />}>
             <Route path="/checkout" element={<CheckoutPage />} />
+          </Route>
+
+          {/* ── Ticket Scanner routes (S-28 AC1: Soát vé tại cửa) ─ */}
+          <Route element={<PrivateRoute roles={['ticket_checker', 'admin']} />}>
+            <Route path="/scanner" element={<TicketScannerPage />} />
           </Route>
 
           {/* ── Organizer-only routes ────────────────────────── */}

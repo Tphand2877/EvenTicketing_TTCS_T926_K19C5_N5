@@ -258,7 +258,16 @@ const login = async (req, res) => {
       await User.updateById(user.id, { password_hash: newHash });
     }
 
-    // 6. [SCRUM-76 AC5] Kiểm tra tài khoản đã kích hoạt chưa
+    // 6. [S-28 AC3] Kiểm tra tài khoản có bị vô hiệu hóa bởi quản trị viên không
+    if (user.deactivated_at) {
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.',
+        isDeactivated: true,
+      });
+    }
+
+    // [SCRUM-76 AC5] Kiểm tra tài khoản chưa kích hoạt email (cho buyer tự đăng ký)
     if (!user.is_active) {
       return res.status(403).json({
         success: false,
