@@ -8,6 +8,7 @@ const ticketScannerController = require('../controllers/ticketScannerController'
 
 const router = createSecureRouter();
 
+router.get('/today-showtimes', { roles: ['admin', 'ticket_checker'] }, ticketScannerController.getTodayShowtimes);
 router.post('/verify', { roles: ['admin', 'ticket_checker'] }, ticketScannerController.verifyTicket);
 router.get('/recent-scans', { roles: ['admin', 'ticket_checker'] }, ticketScannerController.getRecentScans);
 

@@ -69,10 +69,25 @@ export const getRoleChangeLogs = async ({ page = 1, limit = 20 } = {}) => {
 }
 
 /**
- * Xác thực vé tại cửa (S-28 AC1 dành cho ticket_checker và admin)
+ * S-29 AC1: Lấy danh sách suất diễn đang diễn ra hôm nay kèm các cổng soát vé
  */
-export const verifyTicket = async (code) => {
-  const { data } = await apiClient.post('/tickets/verify', { code })
+export const getTodayShowtimes = async (params = {}) => {
+  const { data } = await apiClient.get('/tickets/today-showtimes', { params })
+  return data?.data || { showtimes: [], total: 0 }
+}
+
+/**
+ * Xác thực vé tại cửa (S-28 & S-29 AC2: ghi nhận chính xác cửa vào)
+ */
+export const verifyTicket = async (code, context = {}) => {
+  const { data } = await apiClient.post('/tickets/verify', {
+    code,
+    gate: context.gate,
+    showtimeId: context.showtimeId,
+    eventTitle: context.eventTitle,
+    venue: context.venue,
+    showtimeTitle: context.showtimeTitle,
+  })
   return data
 }
 
