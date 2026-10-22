@@ -33,6 +33,12 @@
 
 ---
 
+## Quy trình nhánh của nhóm
+
+Nhóm dùng GitHub Flow: tạo `feature/*` từ `main` mới nhất, mở PR vào `main`,
+chờ CI đạt và một đồng đội duyệt rồi merge. Các nhánh sửa lỗi và tài liệu cũng mở PR vào `main`.
+Xem [hướng dẫn làm việc với main và nhánh tính năng](docs/GITHUB_FLOW.md).
+
 ## 🛠️ 2. Công nghệ sử dụng (Tech Stack)
 
 | Phân hệ | Công nghệ | Chi tiết |
