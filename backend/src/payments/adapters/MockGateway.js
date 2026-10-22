@@ -104,8 +104,18 @@ const createMockPaymentGateway = ({ secret, origin, deployment, now = Date.now }
 
 const createMockPaymentGatewayFromEnv = ({ env = process.env } = {}) => {
   const { deployment } = readPaymentProviderConfig(env);
-  return createMockPaymentGateway({ deployment, secret: env.MOCK_PAYMENT_WEBHOOK_SECRET,
-    origin: env.MOCK_PAYMENT_PUBLIC_ORIGIN });
+  let secret = env.MOCK_PAYMENT_WEBHOOK_SECRET?.trim();
+  let origin = env.MOCK_PAYMENT_PUBLIC_ORIGIN?.trim();
+  // Chỉ máy dev: thiếu cấu hình thì tự sinh khoá tạm (mất khi restart) và dùng backend localhost,
+  // để `npm run dev` chạy được ngay. Staging vẫn bắt buộc khai báo đủ.
+  if (deployment === 'development') {
+    if (!secret) {
+      secret = crypto.randomBytes(32).toString('hex');
+      console.warn('[Payment] MOCK_PAYMENT_WEBHOOK_SECRET chưa đặt: dùng khoá tạm cho môi trường dev.');
+    }
+    if (!origin) origin = `http://localhost:${env.PORT || 3000}`;
+  }
+  return createMockPaymentGateway({ deployment, secret, origin });
 };
 
 module.exports = { createMockPaymentGateway, createMockPaymentGatewayFromEnv, readMockOrigin };

@@ -10,6 +10,8 @@ describe('T-44 provider selection', () => {
     ['staging', undefined, 'mock'],
     ['staging', 'momo', 'momo'],
     ['development', 'mock', 'mock'],
+    ['development', undefined, 'mock'],
+    ['development', 'momo', 'momo'],
     ['test', undefined, 'mock'],
     ['production', 'momo', 'momo'],
   ])('%s with provider %s selects %s', (deployment, provider, expected) => {
@@ -44,6 +46,15 @@ describe('T-44 provider selection', () => {
     }));
     expect(() => createPaymentRuntime({ env: { ...env, MOCK_PAYMENT_WEBHOOK_SECRET: '' } }))
       .toThrow('MOCK_PAYMENT_WEBHOOK_SECRET');
+  });
+  test('development starts with no payment settings (temporary Mock secret, localhost origin)', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = createPaymentRuntime({ env: { NODE_ENV: 'development' } });
+    expect(runtime.configuration).toEqual({ deployment: 'development', provider: 'mock' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('MOCK_PAYMENT_WEBHOOK_SECRET'));
+    warn.mockRestore();
+    expect(() => createPaymentRuntime({ env: { NODE_ENV: 'production', DEPLOY_ENV: 'staging',
+      MOCK_PAYMENT_PUBLIC_ORIGIN: 'https://staging.example.test' } })).toThrow('MOCK_PAYMENT_WEBHOOK_SECRET');
   });
   test('selected MoMo fails startup when credentials are missing', () => {
     expect(() => createPaymentRuntime({ env: { DEPLOY_ENV: 'production', PAYMENT_PROVIDER: 'momo' } }))
