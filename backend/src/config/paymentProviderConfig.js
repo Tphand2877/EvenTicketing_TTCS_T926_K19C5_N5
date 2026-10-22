@@ -19,8 +19,8 @@ const readPaymentProviderConfig = (env = process.env) => {
     throw new PaymentConfigurationError('DEPLOY_ENV must be development, test, staging, or production.');
   }
   const configured = env.PAYMENT_PROVIDER?.trim().toLowerCase();
-  const provider = configured || (deployment === 'staging' || deployment === 'test' ? 'mock'
-    : deployment === 'development' ? 'momo' : null);
+  // Máy dev chưa có khoá MoMo vẫn phải chạy được: mặc định dùng cổng thử (mock) ngoài production.
+  const provider = configured || (deployment === 'production' ? null : 'mock');
   if (!provider || !PROVIDERS.has(provider)) {
     throw new PaymentConfigurationError('PAYMENT_PROVIDER must be momo or mock; production requires explicit momo.');
   }
